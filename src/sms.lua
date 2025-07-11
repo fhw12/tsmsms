@@ -35,12 +35,22 @@ end
 function sms:goPDU()
 	local ubus_response = util.ubus("tsmodem.driver", "automation", {})
 	if_debug("[sms.lua] goPDU()", "AT+CMGF=0", string.format("Automation mode: [%s]", tostring(ubus_response["mode"])))
-	local ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" })
+	ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" })
+	print('>>> ubus_response (sms:goPDU): ', ubus_response)
+	for key, value in pairs(ubus_response) do
+		print(key, value)
+	end
+	print('>>> ubus_response end\n')
 end
 
 function sms:goTEXT()
-		if_debug("[sms.lua] goTEXT()", "AT+CMGF=1")
-		local ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
+	if_debug("[sms.lua] goTEXT()", "AT+CMGF=1")
+	local ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
+	print('>>> ubus_response (sms:goTEXT): ', ubus_response)
+	for key, value in pairs(ubus_response) do
+		print(key, value)
+	end
+	print('>>> ubus_response end\n')
 end
 
 function sms:setPduLength()
@@ -48,6 +58,11 @@ function sms:setPduLength()
 	local ubus_response = util.ubus("tsmodem.driver", "automation", {})
 	if_debug("[sms.lua] setPduLength()", pdu_len, string.format("Automation mode: [%s]", tostring(ubus_response["mode"])))
 	util.ubus("tsmodem.driver", "send_at", { ["command"] = string.format("AT+CMGS=%s", pdu_len) })
+	print('>>> ubus_response (sms:setPduLength): ', ubus_response)
+	for key, value in pairs(ubus_response) do
+		print(key, value)
+	end
+	print('>>> ubus_response end\n')
 end
 
 function sms:sendPduText(pdu)
@@ -55,6 +70,11 @@ function sms:sendPduText(pdu)
 	local ubus_response = util.ubus("tsmodem.driver", "automation", {})
 	if_debug("[sms.lua] sendPduText()", pdu_text, string.format("Automation mode: [%s]", tostring(ubus_response["mode"])))
 	util.ubus("tsmodem.driver", "send_at", { ["command"] = string.format("%s\26", pdu_text) })
+	print('>>> ubus_response (sms:sendPduText): ', ubus_response)
+	for key, value in pairs(ubus_response) do
+		print(key, value)
+	end
+	print('>>> ubus_response end\n')
 end
 
 
