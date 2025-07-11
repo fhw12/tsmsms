@@ -86,7 +86,7 @@ function app:make_ubus()
         end, { phone = ubus.STRING, text = ubus.STRING }
       },
 
-      get_count_of_recieved_sms = {
+      get_count_of_received_sms = {
         function (req, msg)
           local resp = {}
           app.conn:reply(req, resp)
