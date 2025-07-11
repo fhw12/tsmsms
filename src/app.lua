@@ -38,6 +38,7 @@ local timer = require "tsmsms.timer"
 local ubus = require "ubus"
 local util = require "luci.util"
 local sys = require "luci.sys"
+local uloop = require "uloop"
 
 
 require "tsmsms.util"
@@ -56,6 +57,7 @@ function app:init()
   else
     app:make_ubus()
     app:subscribe_ubus()
+    -- app.conn:listen({["ev_name"] = function () end})
   end
 end
 
@@ -69,7 +71,7 @@ function app:make_ubus()
           local smsphone = tostring(msg["phone"])
           local smstext = tostring(msg["text"])
 
-          if smsphone and smstext then 
+          if smsphone and smstext then
             local total_files, folder = app.file:makePduChunks(smsphone, smstext)
             resp = {
               ["total_chunks"] = total_files,
@@ -80,9 +82,37 @@ function app:make_ubus()
               ["ERROR"] = "No phone or sms text got via UBUS"
             }
           end
-          app.conn:reply(req, resp);
-        end, {phone = ubus.STRING, text = ubus.STRING }
+          app.conn:reply(req, resp)
+        end, { phone = ubus.STRING, text = ubus.STRING }
       },
+
+      get_count_of_recieved_sms = {
+        function (req, msg)
+          local resp = {}
+          app.conn:reply(req, resp)
+        end, { }
+      },
+
+      read_sms_by_index = {
+        function (req, msg)
+          local resp = {}
+          app.conn:reply(req, resp)
+        end, { index = ubus.INT32 }
+      },
+
+      read_all_sms = {
+        function (req, msg)
+          local resp = {}
+          app.conn:reply(req, resp)
+        end, { }
+      },
+
+      delete_sms_by_index = {
+        function (req, msg)
+          local resp = {}
+          app.conn:reply(req, resp)
+        end, { index = ubus.INT32 }
+      }
     }
   }
   app.conn:add( ubus_methods )
@@ -91,7 +121,8 @@ end
 function app:subscribe_ubus()
   local sub = {
     notify = function(msg, name)
-      --print("TSMSMS NOTIFY", util.serialize_json({ module = "tsmsms", result = msg["answer"]}), name)
+      print("==============================")
+      print("TSMSMS NOTIFY", util.serialize_json({ module = "tsmsms", result = msg["answer"]}), name)
       if(name == "SMS-SENT-OK") then
         local shell_command = string.format("echo '%s' > %s", util.serialize_json({
           module = "tsmsms",
@@ -109,9 +140,10 @@ function app:subscribe_ubus()
       elseif(name == "AT-ANSWER") then
         if_debug("AT-ANSWER", msg["answer"], "")
       end
+      print("==============================")
     end
   }
-    app.conn:subscribe("tsmodem.driver", sub)
+  app.conn:subscribe("tsmodem.driver", sub)
 end
 
 
@@ -122,16 +154,27 @@ local metatable = {
     app.file = file
     app.timer = timer
 
+    uloop.init()
     app:init()
     sms:init(app, file, timer)
     file:init(app, sms, timer)
     timer:init(app, file, sms)
-    uloop.init()
 
     -- Запускаем периодический опрос на проверку
     -- появился ли новый файл с текстом для отправки по SMS
-
     timer.general:set(timer.steps["0_GENERAL"])
+
+    -- app.conn:listen({
+    --   ["SMS-SENT-ERROR"] = function(msg)
+    --       print('----------')
+    --       print("<<< Received event, msg:", msg)
+    --       for k, v in pairs(msg) do
+    --           print(k, v)
+    --       end
+    --       print('----------')
+    --   end
+    -- })
+
 
 
     uloop.run()
