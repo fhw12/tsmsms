@@ -49,6 +49,12 @@ app.conn = nil
 app.pipeout_file = "/tmp/wspipeout.fifo"     -- Gwsocket creates it
 app.pipein_file = "/tmp/wspipein.fifo"       -- Gwsocket creates it
 
+-- default state (wait ubus request): wait
+-- get_count_of_received_sms states: sms_count_waiting_CMGF_OK, sms_count_waiting_CPMS_result
+app.state = "wait"
+
+local def_req = nil
+
 
 function app:init()
   app.conn = ubus.connect()
@@ -57,7 +63,6 @@ function app:init()
   else
     app:make_ubus()
     app:subscribe_ubus()
-    -- app.conn:listen({["ev_name"] = function () end})
   end
 end
 
@@ -88,8 +93,15 @@ function app:make_ubus()
 
       get_count_of_received_sms = {
         function (req, msg)
-          local resp = {}
-          app.conn:reply(req, resp)
+          if app.state ~= "wait" then
+            app.conn.reply(req, { status = "busy" })
+          else
+            app.conn:reply(req, { status = "started" })
+            def_req = app.conn:defer_request(req)
+
+            app.state = "sms_count_waiting_CMGF_OK"
+            util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
+          end
         end, { }
       },
 
@@ -112,7 +124,7 @@ function app:make_ubus()
           local resp = {}
           app.conn:reply(req, resp)
         end, { index = ubus.INT32 }
-      }
+      },
     }
   }
   app.conn:add( ubus_methods )
@@ -139,6 +151,28 @@ function app:subscribe_ubus()
         sys.process.exec({"/bin/sh", "-c", shell_command }, true, true, false)
       elseif(name == "AT-ANSWER") then
         if_debug("AT-ANSWER", msg["answer"], "")
+
+        if app.state == "sms_count_waiting_CMGF_OK" then
+          if msg["answer"]:find("^AT%+CMGF") and msg["answer"]:find("OK") then
+            app.state = "sms_count_waiting_CPMS_result"
+            util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CPMS?" })
+          else
+            app.conn:reply(def_req, { status = 'error' })
+            app.conn:complete_deferred_request(def_req, 0)
+            def_req = nil
+            app.state = "wait"
+          end
+        elseif app.state == "sms_count_waiting_CPMS_result" then
+          if msg["answer"]:find("^AT%+CPMS") and msg["answer"]:find("OK") then
+            local sms_count = msg["answer"]:match('"SM",(%d+)')
+            app.conn:reply(def_req, { status = "ok", result = sms_count })
+          else
+            app.conn:reply(def_req, { status = 'error' })
+          end
+          app.conn:complete_deferred_request(def_req, 0)
+          def_req = nil
+          app.state = "wait"
+        end
       end
       print("==============================")
     end
@@ -164,19 +198,6 @@ local metatable = {
     -- появился ли новый файл с текстом для отправки по SMS
     timer.general:set(timer.steps["0_GENERAL"])
 
-    -- app.conn:listen({
-    --   ["SMS-SENT-ERROR"] = function(msg)
-    --       print('----------')
-    --       print("<<< Received event, msg:", msg)
-    --       for k, v in pairs(msg) do
-    --           print(k, v)
-    --       end
-    --       print('----------')
-    --   end
-    -- })
-
-
-
     uloop.run()
     app.conn:close()
 
@@ -184,7 +205,5 @@ local metatable = {
   end
 }
 setmetatable(app, metatable)
-
-
 
 app(sms, file, timer)
