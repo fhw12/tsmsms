@@ -40,6 +40,7 @@ local util = require "luci.util"
 local sys = require "luci.sys"
 local uloop = require "uloop"
 
+local STATE = require "tsmsms.constants.state"
 
 require "tsmsms.util"
 
@@ -49,11 +50,10 @@ app.conn = nil
 app.pipeout_file = "/tmp/wspipeout.fifo"     -- Gwsocket creates it
 app.pipein_file = "/tmp/wspipein.fifo"       -- Gwsocket creates it
 
--- default state (wait ubus request): wait
--- get_count_of_received_sms states: sms_count_waiting_CMGF_OK, sms_count_waiting_CPMS_result
-app.state = "wait"
+app.state = STATE.WAIT
 
 local def_req = nil
+local sms_index = nil
 
 
 function app:init()
@@ -93,13 +93,13 @@ function app:make_ubus()
 
       get_count_of_received_sms = {
         function (req, msg)
-          if app.state ~= "wait" then
-            app.conn.reply(req, { status = "busy" })
+          if app.state ~= STATE.WAIT then
+            app.conn:reply(req, { status = "busy" })
           else
             app.conn:reply(req, { status = "started" })
             def_req = app.conn:defer_request(req)
 
-            app.state = "sms_count_waiting_CMGF_OK"
+            app.state = STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK
             util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
           end
         end, { }
@@ -107,8 +107,26 @@ function app:make_ubus()
 
       read_sms_by_index = {
         function (req, msg)
-          local resp = {}
-          app.conn:reply(req, resp)
+          if app.state ~= STATE.WAIT then
+            app.conn:reply(req, { status = "busy" })
+          else
+            app.conn:reply(req, { status = "started" })
+            def_req = app.conn:defer_request(req)
+            sms_index = msg["index"]
+
+            print('read_sms_by_index [started]')
+
+            app.state = STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK
+
+            local ubus_result = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" })
+            if ubus_result == nil then
+              print('[read_sms_by_index] ubus result', ubus_result)
+              app.conn:reply(def_req, { status = 'error' })
+              app.conn:complete_deferred_request(def_req, 0)
+              def_req = nil
+              app.state = STATE.WAIT
+            end
+          end
         end, { index = ubus.INT32 }
       },
 
@@ -152,17 +170,20 @@ function app:subscribe_ubus()
       elseif(name == "AT-ANSWER") then
         if_debug("AT-ANSWER", msg["answer"], "")
 
-        if app.state == "sms_count_waiting_CMGF_OK" then
+        print("< answer < ", msg["answer"])
+
+        -- get_count_of_received_sms
+        if app.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK then
           if msg["answer"]:find("^AT%+CMGF") and msg["answer"]:find("OK") then
-            app.state = "sms_count_waiting_CPMS_result"
+            app.state = STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT
             util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CPMS?" })
           else
             app.conn:reply(def_req, { status = 'error' })
             app.conn:complete_deferred_request(def_req, 0)
             def_req = nil
-            app.state = "wait"
+            app.state = STATE.WAIT
           end
-        elseif app.state == "sms_count_waiting_CPMS_result" then
+        elseif app.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT then
           if msg["answer"]:find("^AT%+CPMS") and msg["answer"]:find("OK") then
             local sms_count = msg["answer"]:match('"SM",(%d+)')
             app.conn:reply(def_req, { status = "ok", result = sms_count })
@@ -171,7 +192,46 @@ function app:subscribe_ubus()
           end
           app.conn:complete_deferred_request(def_req, 0)
           def_req = nil
-          app.state = "wait"
+          app.state = STATE.WAIT
+        end
+
+        -- read_sms_by_index
+        if app.state == STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK then
+          if msg["answer"]:find("^AT%+CMGF") and msg["answer"]:find("OK") then
+            app.state = STATE.READ_SMS_BY_INDEX.WAITING_CMGR_RESULT
+            local ubus_result = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGR="..tostring(sms_index) })
+            print('read_sms_by_index [WAITING_CMGF_OK DONE]')
+
+            if ubus_result == nil then
+              app.conn:reply(def_req, { status = 'error' })
+              app.conn:complete_deferred_request(def_req, 0)
+              def_req = nil
+              app.state = STATE.WAIT
+            end
+          else
+            app.conn:reply(def_req, { status = 'error' })
+            app.conn:complete_deferred_request(def_req, 0)
+            def_req = nil
+            app.state = STATE.WAIT
+          end
+        end
+      elseif name == "SMS-RECEIVED" then
+        -- read_sms_by_index
+        if app.state == STATE.READ_SMS_BY_INDEX.WAITING_CMGR_RESULT then
+          print('[msg:answer] >>> ', msg["answer"])
+          if msg["answer"]:find("\r\n+CMGR", 1, true) then
+            print('started last func')
+            app.conn:reply(def_req, { result = msg["answer"] })
+            app.conn:complete_deferred_request(def_req, 0)
+            print('before ubus call')
+            local ubus_result = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
+            print('after ubus call')
+            print('ubus_result (final): ', ubus_result)
+            def_req = nil
+            sms_index = nil
+            app.state = STATE.WAIT
+            print('read_sms_by_index [WAITING_CMGR_RESULT DONE]')
+          end
         end
       end
       print("==============================")
