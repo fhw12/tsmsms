@@ -32,6 +32,8 @@ end)
 Повторяем всё с начала для следующего файла.
 
 ]]
+local pdu_decoder = require "tsmsms.pdu_decoder"
+local STATE = require "tsmsms.constants.state"
 local file = require "tsmsms.file"
 local sms = require "tsmsms.sms"
 local timer = require "tsmsms.timer"
@@ -40,7 +42,6 @@ local util = require "luci.util"
 local sys = require "luci.sys"
 local uloop = require "uloop"
 
-local STATE = require "tsmsms.constants.state"
 
 require "tsmsms.util"
 
@@ -221,7 +222,27 @@ function app:subscribe_ubus()
           print('[msg:answer] >>> ', msg["answer"])
           if msg["answer"]:find("\r\n+CMGR", 1, true) then
             print('started last func')
-            app.conn:reply(def_req, { result = msg["answer"] })
+
+            local pdu_data = ""
+            local shift = 2
+
+            if msg["answer"]:find("OK") then
+              shift = 8
+            end
+
+            for i = #msg["answer"] - shift, 1, -1 do
+              if msg["answer"]:sub(i, i) == '\n' then break end
+              pdu_data = msg["answer"]:sub(i, i) .. pdu_data
+            end
+
+            local parsed_sms = pdu_decoder.parse(pdu_data)
+
+            app.conn:reply(def_req, {
+              result = msg["answer"],
+              pdu_data = pdu_data,
+              sender = parsed_sms.sender,
+              message = parsed_sms.message,
+            })
             app.conn:complete_deferred_request(def_req, 0)
             print('before ubus call')
             local ubus_result = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
