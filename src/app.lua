@@ -55,7 +55,22 @@ app.state = STATE.WAIT
 
 local def_req = nil
 local sms_index = nil
+local timeout_timer = nil
 
+local function on_timeout()
+  app.state = STATE.WAIT
+  timeout_timer = nil
+  if def_req then
+    app.conn:reply(def_req, { status = 'timeout' })
+    app.conn:complete_deferred_request(def_req, 0)
+    def_req = nil
+  end
+end
+
+local function start_timeout_timer()
+  timeout_timer = uloop.timer(on_timeout)
+  timeout_timer:set(3000)
+end
 
 function app:init()
   app.conn = ubus.connect()
@@ -100,6 +115,8 @@ function app:make_ubus()
             app.conn:reply(req, { status = "started" })
             def_req = app.conn:defer_request(req)
 
+            start_timeout_timer()
+
             app.state = STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK
             util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
           end
@@ -116,6 +133,7 @@ function app:make_ubus()
             sms_index = msg["index"]
 
             print('read_sms_by_index [started]')
+            start_timeout_timer()
 
             app.state = STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK
 
@@ -147,6 +165,7 @@ function app:make_ubus()
     }
   }
   app.conn:add( ubus_methods )
+  app.ubus_methods = ubus_methods
 end
 
 function app:subscribe_ubus()
@@ -186,6 +205,7 @@ function app:subscribe_ubus()
           end
         elseif app.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT then
           if msg["answer"]:find("^AT%+CPMS") and msg["answer"]:find("OK") then
+            if timeout_timer then timeout_timer:cancel() end
             local sms_count = msg["answer"]:match('"SM",(%d+)')
             app.conn:reply(def_req, { status = "ok", result = sms_count })
           else
@@ -217,10 +237,12 @@ function app:subscribe_ubus()
           end
         end
       elseif name == "SMS-RECEIVED" then
+        print(msg["answer"])
         -- read_sms_by_index
         if app.state == STATE.READ_SMS_BY_INDEX.WAITING_CMGR_RESULT then
           print('[msg:answer] >>> ', msg["answer"])
           if msg["answer"]:find("\r\n+CMGR", 1, true) then
+            if timeout_timer then timeout_timer:cancel() end
             print('started last func')
 
             local pdu_data = ""
@@ -241,7 +263,10 @@ function app:subscribe_ubus()
               result = msg["answer"],
               pdu_data = pdu_data,
               sender = parsed_sms.sender,
+              sender_address_type = parsed_sms.sender_address_type,
               message = parsed_sms.message,
+              decoded_message = parsed_sms.decoded_message,
+              data_coding_scheme = parsed_sms.data_coding_scheme,
             })
             app.conn:complete_deferred_request(def_req, 0)
             print('before ubus call')
@@ -253,7 +278,11 @@ function app:subscribe_ubus()
             app.state = STATE.WAIT
             print('read_sms_by_index [WAITING_CMGR_RESULT DONE]')
           end
+        else
+          print('[[[SMS-RECEIVED]]] ELSE BLOCK CALLED')
         end
+        print("notify (tsmodem.sms): ", msg["answer"])
+        app.conn:notify(app.ubus_methods["tsmodem.sms"].__ubusobj, 'sms-received', { answer = msg["answer"] })
       end
       print("==============================")
     end
