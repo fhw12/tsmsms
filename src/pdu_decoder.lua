@@ -1,3 +1,5 @@
+local text_decoder = require "tsmsms.text_decoder"
+
 local pdu_decoder = {}
 
 function pdu_decoder.parse(msg)
@@ -82,9 +84,19 @@ function pdu_decoder.parse(msg)
     local message_hex = msg:sub(p, #msg)
     print("[pdu_decoder.lua] message_hex: ", message_hex)
 
+    local message_text = ""
+    if data_coding_scheme == "08" then
+        message_text = text_decoder.utf16be_to_utf8(message_hex)
+    elseif data_coding_scheme == "00" then
+        message_text = text_decoder.gsm7bit_to_text(message_hex)
+    end
+
     return {
         sender = sender_number,
+        sender_address_type = sender_address_type,
         message = message_hex,
+        decoded_message = message_text,
+        data_coding_scheme = data_coding_scheme,
     }
 end
 
