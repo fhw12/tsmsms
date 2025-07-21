@@ -171,8 +171,8 @@ end
 function app:subscribe_ubus()
   local sub = {
     notify = function(msg, name)
-      print("==============================")
-      print("TSMSMS NOTIFY", util.serialize_json({ module = "tsmsms", result = msg["answer"]}), name)
+      -- print("==============================")
+      -- print("TSMSMS NOTIFY", util.serialize_json({ module = "tsmsms", result = msg["answer"]}), name)
       if(name == "SMS-SENT-OK") then
         local shell_command = string.format("echo '%s' > %s", util.serialize_json({
           module = "tsmsms",
@@ -188,9 +188,8 @@ function app:subscribe_ubus()
         if_debug("SMS-SENT-ERROR", msg["answer"], "")
         sys.process.exec({"/bin/sh", "-c", shell_command }, true, true, false)
       elseif(name == "AT-ANSWER") then
-        if_debug("AT-ANSWER", msg["answer"], "")
-
-        print("< answer < ", msg["answer"])
+        -- if_debug("AT-ANSWER", msg["answer"], "")
+        -- print("< answer < ", msg["answer"])
 
         -- get_count_of_received_sms
         if app.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK then
@@ -267,6 +266,7 @@ function app:subscribe_ubus()
               message = parsed_sms.message,
               decoded_message = parsed_sms.decoded_message,
               data_coding_scheme = parsed_sms.data_coding_scheme,
+              date = parsed_sms.date,
             })
             app.conn:complete_deferred_request(def_req, 0)
             print('before ubus call')
@@ -284,7 +284,7 @@ function app:subscribe_ubus()
         print("notify (tsmodem.sms): ", msg["answer"])
         app.conn:notify(app.ubus_methods["tsmodem.sms"].__ubusobj, 'sms-received', { answer = msg["answer"] })
       end
-      print("==============================")
+      -- print("==============================")
     end
   }
   app.conn:subscribe("tsmodem.driver", sub)
