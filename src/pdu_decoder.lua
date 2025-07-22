@@ -6,11 +6,11 @@ function pdu_decoder.parse(msg)
     local p = 1
 
     local smsc_length = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] smsc_length: ", smsc_length)
+    -- print("[pdu_decoder.lua] smsc_length: ", smsc_length)
     p = p + 2
 
     local smsc_address_type = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] smsc_address_type: ", smsc_address_type)
+    -- print("[pdu_decoder.lua] smsc_address_type: ", smsc_address_type)
     p = p + 2
 
     local service_center_number = "+"
@@ -27,18 +27,18 @@ function pdu_decoder.parse(msg)
 
         service_center_number = service_center_number .. first_digit .. second_digit
     end
-    print("[pdu_decoder.lua] service_center_number: ", service_center_number)
+    -- print("[pdu_decoder.lua] service_center_number: ", service_center_number)
 
     local message_type = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] message_type", message_type)
+    -- print("[pdu_decoder.lua] message_type", message_type)
     p = p + 2
 
     local sender_address_length = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] sender_address_length: ", sender_address_length)
+    -- print("[pdu_decoder.lua] sender_address_length: ", sender_address_length)
     p = p + 2
 
     local sender_address_type = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] sender_address_type: ", sender_address_type)
+    -- print("[pdu_decoder.lua] sender_address_type: ", sender_address_type)
     p = p + 2
 
     local sender_number = ""
@@ -66,14 +66,14 @@ function pdu_decoder.parse(msg)
         sender_number = text_decoder.gsm7bit_to_text(sender_number)
     end
 
-    print("[pdu_decoder.lua] sender_number: ", sender_number)
+    -- print("[pdu_decoder.lua] sender_number: ", sender_number)
 
     local protocol_identifier = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] protocol_identifier: ", protocol_identifier)
+    -- print("[pdu_decoder.lua] protocol_identifier: ", protocol_identifier)
     p = p + 2
 
     local data_coding_scheme = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] data_coding_scheme: ", data_coding_scheme)
+    -- print("[pdu_decoder.lua] data_coding_scheme: ", data_coding_scheme)
     p = p + 2
 
     local date = {
@@ -108,15 +108,15 @@ function pdu_decoder.parse(msg)
             date.time_zone = date_number
         end
     end
-    print("[pdu_decoder.lua] date: ", date.text)
+    -- print("[pdu_decoder.lua] date: ", date.text)
     date.text = date.day .. '.' .. date.month .. '.' .. date.year .. ' ' .. date.hours .. ':' .. date.minutes .. ':' .. date.seconds .. ' ' .. 'GMT+' .. tostring(tonumber(date.time_zone, 10) * 15 / 60)
 
     local user_date_length = msg:sub(p, p + 1)
-    print("[pdu_decoder.lua] user_date_length: ", user_date_length)
+    -- print("[pdu_decoder.lua] user_date_length: ", user_date_length)
     p = p + 2
 
     local message_hex = msg:sub(p, #msg)
-    print("[pdu_decoder.lua] message_hex: ", message_hex)
+    -- print("[pdu_decoder.lua] message_hex: ", message_hex)
 
     local message_text = ""
     if data_coding_scheme == "08" then
@@ -126,12 +126,19 @@ function pdu_decoder.parse(msg)
     end
 
     return {
-        sender = sender_number,
+        smsc_length = smsc_length,
+        smsc_address_type = smsc_address_type,
+        service_center_number = service_center_number,
+        message_type = message_type,
+        sender_address_length = sender_address_length,
         sender_address_type = sender_address_type,
-        message = message_hex,
-        decoded_message = message_text,
+        sender_number = sender_number,
+        protocol_identifier = protocol_identifier,
         data_coding_scheme = data_coding_scheme,
-        date = date.text,
+        date = date,
+        user_date_length = user_date_length,
+        message_hex = message_hex,
+        message_text = message_text,
     }
 end
 
