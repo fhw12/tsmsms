@@ -35,7 +35,6 @@ end)
 local state_machine = require "tsmsms.state_machine"
 local file = require "tsmsms.file"
 local sms = require "tsmsms.sms"
-local timer = require "tsmsms.timer"
 local ubus = require "ubus"
 local util = require "luci.util"
 local sys = require "luci.sys"
@@ -65,22 +64,9 @@ function app:make_ubus()
     ["tsmodem.sms"] = {
       send_sms = {
         function(req, msg)
-          local resp = {}
-          local smsphone = tostring(msg["phone"])
-          local smstext = tostring(msg["text"])
-
-          if smsphone and smstext then
-            local total_files, folder = app.file:makePduChunks(smsphone, smstext)
-            resp = {
-              ["total_chunks"] = total_files,
-              ["folder"] = tostring(folder)
-            }
-          else
-            resp = {
-              ["ERROR"] = "No phone or sms text got via UBUS"
-            }
-          end
-          app.conn:reply(req, resp)
+          local sms_phone = tostring(msg["phone"])
+          local sms_text = tostring(msg["text"])
+          state_machine.start_send_sms(req, sms_phone, sms_text)
         end, { phone = ubus.STRING, text = ubus.STRING }
       },
 
@@ -146,20 +132,14 @@ end
 
 -- [[ Initialize ]]
 local metatable = {
-  __call = function(app, sms, file, timer)
+  __call = function(app, sms, file)
     app.sms = sms
     app.file = file
-    app.timer = timer
 
     uloop.init()
     app:init()
-    sms:init(app, file, timer)
-    file:init(app, sms, timer)
-    timer:init(app, file, sms)
-
-    -- Запускаем периодический опрос на проверку
-    -- появился ли новый файл с текстом для отправки по SMS
-    timer.general:set(timer.steps["0_GENERAL"])
+    sms:init(app, file)
+    file:init(app, sms)
 
     uloop.run()
     app.conn:close()
@@ -169,4 +149,4 @@ local metatable = {
 }
 setmetatable(app, metatable)
 
-app(sms, file, timer)
+app(sms, file)
