@@ -14,7 +14,7 @@ require "tsmsms.util"
 
 
 
-file = {}
+local file = {}
 file.outgoing = "/var/spool/tsmsms/outgoing"
 file.sent = "/var/spool/tsmsms/sent"
 file.failed = "/var/spool/tsmsms/failed"
@@ -25,13 +25,12 @@ file.pdu_len = ""
 file.ok_num, ok_sms, pdu_sms_text = true,true,""
 
 
-function file:init(app, sms, timer)
+function file:init(app, sms)
 	nixio.fs.mkdirr(file.outgoing)
 	nixio.fs.mkdirr(file.sent)
 	nixio.fs.mkdirr(file.failed)
     file.app = app
     file.sms = sms
-    file.timer = timer
 end
 
 -- Разбивает текст на куски, кодирует в PDU,

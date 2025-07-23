@@ -24,10 +24,9 @@ sms.body = {
 }
 
 
-function sms:init(app, file, timer)
+function sms:init(app, file)
     sms.app = app
     sms.file = file
-    sms.timer = timer
     return sms
 end
 
