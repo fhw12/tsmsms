@@ -86,7 +86,7 @@ function app:make_ubus()
       read_all_sms = {
         function (req, msg)
           local resp = {}
-          app.conn:reply(req, resp)
+          state_machine.start_read_all_sms(req)
         end, { }
       },
 
