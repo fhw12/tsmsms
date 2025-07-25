@@ -19,21 +19,30 @@ function state_machine.init(app)
 end
 
 function state_machine.on_timeout()
-    state_machine.state = STATE.WAIT
+    state_machine.timeout_timer:cancel()
     state_machine.timeout_timer = nil
+
     if state_machine.def_req then
         state_machine.app.conn:reply(state_machine.def_req, {
             status = UBUS_RESPONSE_STATUS.TIMEOUT
         })
         state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
-        state_machine.def_req = nil
     end
+
+    state_machine.reset_state()
 end
 
 function state_machine.start_timeout_timer(timeout)
     local timeout_timer = uloop.timer(state_machine.on_timeout)
     timeout_timer:set(timeout or 3000)
     state_machine.timeout_timer = timeout_timer
+end
+
+function state_machine.reset_state()
+    state_machine.read_all_sms_buffer = {}
+    state_machine.sms_index = nil
+    state_machine.def_req = nil
+    state_machine.state = STATE.WAIT
 end
 
 function state_machine.busy_check(req)
@@ -46,11 +55,20 @@ function state_machine.busy_check(req)
     return false
 end
 
+function state_machine.start_reply(req)
+    state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.STARTED })
+    state_machine.def_req = state_machine.app.conn:defer_request(req)
+end
+
+function state_machine.end_reply()
+    state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
+    state_machine.reset_state()
+end
+
 function state_machine.send_error()
     if state_machine.def_req then
         state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.ERROR })
-        state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
-        state_machine.def_req = nil
+        state_machine.end_reply()
     end
     state_machine.state = STATE.WAIT
 end
@@ -59,9 +77,7 @@ end
 function state_machine.start_get_count_of_received_sms(req)
     if_debug("[get_count_of_received_sms]", "ubus request received", "")
     if state_machine.busy_check(req) then return end
-
-    state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.STARTED })
-    state_machine.def_req = state_machine.app.conn:defer_request(req)
+    state_machine.start_reply(req)
 
     state_machine.state = STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK
     util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
@@ -76,13 +92,12 @@ end
 
 function state_machine.get_count_of_received_sms_CPMS_RESULT_handler(at_response)
     if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
+
     local sms_count = at_response:match('"SM",(%d+)')
     if_debug("[get_count_of_received_sms]", "SMS_COUNT (result)", tostring(sms_count))
-    state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.OK, result = sms_count })
 
-    state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
-    state_machine.def_req = nil
-    state_machine.state = STATE.WAIT
+    state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.OK, result = sms_count })
+    state_machine.end_reply()
 end
 
 function state_machine.get_count_of_received_sms_event_handler(at_response)
@@ -109,11 +124,9 @@ end
 function state_machine.start_read_sms_by_index(req, sms_index)
     if_debug("[start_read_sms_by_index]", "ubus request received", "")
     if state_machine.busy_check(req) then return end
+    state_machine.start_reply(req)
 
-    state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.STARTED })
-    state_machine.def_req = state_machine.app.conn:defer_request(req)
     state_machine.sms_index = sms_index
-
     state_machine.state = STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK
     util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" })
     state_machine.start_timeout_timer()
@@ -141,19 +154,17 @@ function state_machine.read_sms_by_index_CMGR_RESULT_handler(at_response)
     end
 
     local parsed_sms = pdu_decoder.parse(pdu_data)
-
-    local ubus_response_json = {
+    local response = {
         status = UBUS_RESPONSE_STATUS.OK,
         sender = parsed_sms.sender_number,
         date = parsed_sms.date.text,
         message = parsed_sms.message_text,
     }
-    state_machine.app.conn:reply(state_machine.def_req, ubus_response_json)
-    if_debug("[read_sms_by_index]", util.serialize_json(ubus_response_json), "")
 
-    state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
-    state_machine.def_req = nil
-    state_machine.state = STATE.WAIT
+    state_machine.app.conn:reply(state_machine.def_req, response)
+    state_machine.end_reply()
+
+    if_debug("[read_sms_by_index]", util.serialize_json(response), "")
 end
 
 function state_machine.read_sms_by_index_event_handler(at_response)
@@ -173,16 +184,55 @@ function state_machine.read_sms_by_index_event_handler(at_response)
     end
 end
 
+-- delete sms by index
+function state_machine.start_delete_sms_by_index(req, sms_index)
+    if_debug("[start_delete_sms_by_index]", "ubus request received", "")
+    if state_machine.busy_check(req) then return end
+    state_machine.start_reply(req)
+
+    state_machine.sms_index = sms_index
+    state_machine.state = STATE.DELETE_SMS_BY_INDEX.WAITING_CMGF_OK
+    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
+    state_machine.start_timeout_timer()
+    if_debug("[start_delete_sms_by_index]", "started", "")
+end
+
+function state_machine.delete_sms_by_index_CMGF_OK_handler()
+    state_machine.state = STATE.DELETE_SMS_BY_INDEX.WAITING_CMGD_OK
+    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGD="..tostring(state_machine.sms_index) })
+end
+
+function state_machine.delete_sms_by_index_CMGD_OK_handler()
+    if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
+
+    state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.OK })
+    state_machine.end_reply()
+end
+
+function state_machine.delete_sms_by_index_event_handler(at_response)
+    if state_machine.state == STATE.DELETE_SMS_BY_INDEX.WAITING_CMGF_OK then
+        if at_response:find("^AT%+CMGF") and at_response:find("OK") then
+            if_debug("[delete_sms_by_index]", "CMGF_OK", "")
+            state_machine.delete_sms_by_index_CMGF_OK_handler()
+        else
+            if_debug("[delete_sms_by_index]", "CMGF_ERROR", "")
+            state_machine.send_error()
+        end
+    elseif state_machine.state == STATE.DELETE_SMS_BY_INDEX.WAITING_CMGD_OK then
+        if at_response:find("^AT%+CMGD") then --and at_response:find("OK") then
+            if_debug("[delete_sms_by_index]", "CMGD_OK", "")
+            state_machine.delete_sms_by_index_CMGD_OK_handler()
+        end
+    end
+end
+
 -- read all sms
 function state_machine.start_read_all_sms(req)
     if_debug("[read_all_sms]", "ubus request received", "")
     if state_machine.busy_check(req) then return end
+    state_machine.start_reply(req)
 
     state_machine.read_all_sms_buffer = {}
-
-    state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.STARTED })
-    state_machine.def_req = state_machine.app.conn:defer_request(req)
-
     state_machine.state = STATE.READ_ALL_SMS.WAITING_CMGF_OK
     util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" })
     state_machine.start_timeout_timer()
@@ -235,12 +285,10 @@ function state_machine.read_all_sms_CMGL_OK_handler()
         }
     end
 
-    state_machine.read_all_sms_buffer = {}
     state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.OK, result = response })
+    state_machine.end_reply()
 
-    state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
-    state_machine.def_req = nil
-    state_machine.state = STATE.WAIT
+    if_debug("[read_sms_by_index]", util.serialize_json(response), "")
 end
 
 function state_machine.read_all_sms_handler(at_response)
@@ -315,7 +363,7 @@ end
 function state_machine.send_sms_PDU_TEXT_OK_handler()
     if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
     util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" })
-    state_machine.app.file.moveToSent()
+    state_machine.app.file:moveToSent()
     state_machine.state = STATE.WAIT
 end
 
@@ -352,6 +400,8 @@ function state_machine.event_handler(at_response)
         state_machine.read_sms_by_index_event_handler(at_response)
     elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK or state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK or state_machine.state == STATE.SEND_SMS.WAITING_PDU_TEXT_OK then
         state_machine.send_sms_handler(at_response)
+    elseif state_machine.state == STATE.DELETE_SMS_BY_INDEX.WAITING_CMGF_OK or state_machine.state == STATE.DELETE_SMS_BY_INDEX.WAITING_CMGD_OK then
+        state_machine.delete_sms_by_index_event_handler(at_response)
     elseif state_machine.state == STATE.READ_ALL_SMS.WAITING_CMGF_OK or state_machine.state == STATE.READ_ALL_SMS.WAITING_CMGL_RESULT then
         state_machine.read_all_sms_handler(at_response)
     end
