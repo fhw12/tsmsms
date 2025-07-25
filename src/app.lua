@@ -32,6 +32,7 @@ end)
 
 ]]
 
+local TSMODEM_DRIVER_EVENT = require "tsmsms.constants.tsmodem_driver_event"
 local state_machine = require "tsmsms.state_machine"
 local file = require "tsmsms.file"
 local sms = require "tsmsms.sms"
@@ -85,15 +86,14 @@ function app:make_ubus()
 
       read_all_sms = {
         function (req, msg)
-          local resp = {}
           state_machine.start_read_all_sms(req)
         end, { }
       },
 
       delete_sms_by_index = {
         function (req, msg)
-          local resp = {}
-          app.conn:reply(req, resp)
+          local sms_index = msg["index"]
+          state_machine.start_delete_sms_by_index(req, sms_index)
         end, { index = ubus.INT32 }
       },
     }
@@ -105,23 +105,23 @@ end
 function app:subscribe_ubus()
   local sub = {
     notify = function(msg, name)
-      if(name == "SMS-SENT-OK") then
+      if(name == TSMODEM_DRIVER_EVENT.SMS_SENT_OK) then
         local shell_command = string.format("echo '%s' > %s", util.serialize_json({
           module = "tsmsms",
           AT_answer = msg["answer"]
         }), app.pipein_file)
-        if_debug("SMS-SENT-OK", msg["answer"], "")
+        if_debug(TSMODEM_DRIVER_EVENT.SMS_SENT_OK, msg["answer"], "")
         sys.process.exec({"/bin/sh", "-c", shell_command }, true, true, false)
-      elseif(name == "SMS-SENT-ERROR") then
+      elseif(name == TSMODEM_DRIVER_EVENT.SMS_SENT_ERROR) then
         local shell_command = string.format("echo '%s' > %s", util.serialize_json({
           module = "tsmsms",
           SMS_send_result = msg["resp"]
         }), app.pipein_file)
-        if_debug("SMS-SENT-ERROR", msg["answer"], "")
+        if_debug(TSMODEM_DRIVER_EVENT.SMS_SENT_ERROR, msg["answer"], "")
         sys.process.exec({"/bin/sh", "-c", shell_command }, true, true, false)
-      elseif(name == "AT-ANSWER") then
+      elseif name == TSMODEM_DRIVER_EVENT.AT_ANSWER then
         state_machine.event_handler(msg["answer"])
-      elseif name == "SMS-RECEIVED" then
+      elseif name == TSMODEM_DRIVER_EVENT.SMS_RECEIVED then
         state_machine.sms_received_event_handler(msg["answer"])
       end
     end
