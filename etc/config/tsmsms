@@ -1,4 +1,8 @@
 
 config general 'general'
 	option debug '0'
+	option send_sms_max_attempts '3'
+	option tsmodem_response_timeout '60'
+	option send_email_if_error '0'
+	option email_address 'email@email.email'
 
