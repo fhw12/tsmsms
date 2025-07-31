@@ -9,6 +9,8 @@ local D = require 'posix.dirent'
 
 local nixio = require 'nixio'
 
+local pdu_encoder = require "tsmsms.pdu_encoder"
+
 
 require "tsmsms.util"
 
@@ -25,12 +27,11 @@ file.pdu_len = ""
 file.ok_num, ok_sms, pdu_sms_text = true,true,""
 
 
-function file:init(app, sms)
+function file:init(app)
 	nixio.fs.mkdirr(file.outgoing)
 	nixio.fs.mkdirr(file.sent)
 	nixio.fs.mkdirr(file.failed)
     file.app = app
-    file.sms = sms
 end
 
 -- Разбивает текст на куски, кодирует в PDU,
@@ -38,7 +39,7 @@ end
 -- в имени файла указана длина, например:
 -- 23421341_sms_1-part_[208], где 208 длина фрагмента, содержащегося в файле
 function file:makePduChunks(phone, msg)
-	local pdu_len = 0
+	local pdu_len = ""
 	local pdu_text = ""
 	local total_chunks = 0
 
@@ -46,7 +47,8 @@ function file:makePduChunks(phone, msg)
     local parts = split_message(msg, 67)
 
 	for n, part in ipairs(parts) do
-	    pdu_len, pdu_text = EncoderPDU(phone, part)
+	    -- pdu_len, pdu_text = EncoderPDU(phone, part)
+		pdu_len, pdu_text = pdu_encoder.encode(phone, part)
 
 		filename = string.format("%s_sms_%s-part_[%s]", tostring(os.time()), tostring(n), tostring(pdu_len))
 
@@ -107,8 +109,8 @@ function file:moveToSent()
 end
 
 function file:moveToFailed()
-
-	return "file"
+	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.failed .. "/" .. file.name)
+	if_debug("[sms.lua] moveToFailed(): "..tostring(res):upper(), file.failed .. "/" .. file.name)
 end
 
 function file:removeSent()
