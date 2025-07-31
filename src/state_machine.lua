@@ -21,8 +21,11 @@ function state_machine.init(app)
 end
 
 function state_machine.on_timeout()
-    state_machine.timeout_timer:cancel()
-    state_machine.timeout_timer = nil
+    if_debug("[timeout]", "timeout reached", "")
+    if state_machine.timeout_timer then
+        state_machine.timeout_timer:cancel()
+        state_machine.timeout_timer = nil
+    end
 
     if state_machine.def_req then
         state_machine.app.conn:reply(state_machine.def_req, {
@@ -376,7 +379,7 @@ function state_machine.send_sms_handler(at_response)
             state_machine.send_sms_CMGF_OK_handler()
         end
     elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK then
-        if at_response:find("^AT%+CMGS") and at_response:find(">") then
+        if at_response:find("^AT%+CMGS") then --and at_response:find(">") then
             if_debug("[send_sms]", "CMGS_OK", "")
             state_machine.send_sms_CMGS_OK_handler()
         end
@@ -385,6 +388,9 @@ function state_machine.send_sms_handler(at_response)
             if_debug("[send_sms]", "CMGS_OK (PDU TEXT)", "")
             state_machine.send_sms_PDU_TEXT_OK_handler()
         end
+    elseif at_response:find("%+CMS") and at_response:find("ERROR") then
+        if_debug("[send_sms]", "ERROR", at_response)
+        file:moveToFailed()
     end
 end
 
