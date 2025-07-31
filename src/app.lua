@@ -36,7 +36,6 @@ local TSMODEM_DRIVER_EVENT = require "tsmsms.constants.tsmodem_driver_event"
 local state_machine = require "tsmsms.state_machine"
 local uci = require "luci.model.uci".cursor()
 local file = require "tsmsms.file"
-local sms = require "tsmsms.sms"
 local ubus = require "ubus"
 local util = require "luci.util"
 local sys = require "luci.sys"
@@ -136,6 +135,7 @@ function app:subscribe_ubus()
           SMS_send_result = msg["resp"]
         }), app.pipein_file)
         if_debug(TSMODEM_DRIVER_EVENT.SMS_SENT_ERROR, msg["answer"], "")
+        print("SMS SENT ERROR", msg["answer"])
         sys.process.exec({"/bin/sh", "-c", shell_command }, true, true, false)
       elseif name == TSMODEM_DRIVER_EVENT.AT_ANSWER then
         state_machine.event_handler(msg["answer"])
@@ -150,14 +150,12 @@ end
 
 -- [[ Initialize ]]
 local metatable = {
-  __call = function(app, sms, file)
-    app.sms = sms
+  __call = function(app, file)
     app.file = file
 
     uloop.init()
     app:init()
-    sms:init(app, file)
-    file:init(app, sms)
+    file:init(app)
 
     uloop.run()
     app.conn:close()
@@ -167,4 +165,4 @@ local metatable = {
 }
 setmetatable(app, metatable)
 
-app(sms, file)
+app(file)
