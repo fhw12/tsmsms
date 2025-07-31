@@ -36,8 +36,11 @@ function pdu_decoder.parse(msg)
     p = p + 2
 
     local sender_number = ""
-    if sender_address_type == "91" then
-        sender_number = "+"
+    if sender_address_type == "91" or sender_address_type == "81" then
+        if sender_address_type == "91" then
+            sender_number = "+"
+        end
+
         for i = 0, math.ceil(tonumber(sender_address_length, 16) / 2) - 1 do
             local digits = msg:sub(p, p + 1)
             p = p + 2
@@ -45,7 +48,7 @@ function pdu_decoder.parse(msg)
             local first_digit = digits:sub(2, 2)
             local second_digit = digits:sub(1, 1)
 
-            if i == math.ceil(tonumber(sender_address_length, 16) / 2) - 1 then
+            if i == math.ceil(tonumber(sender_address_length, 16) / 2) - 1 and second_digit == "F" then
                 second_digit = ""
             end
 
@@ -57,6 +60,7 @@ function pdu_decoder.parse(msg)
             sender_number = sender_number .. digits:sub(1, 2)
             p = p + 2
         end
+
         sender_number = text_decoder.gsm7bit_to_text(sender_number)
     end
 
@@ -100,7 +104,7 @@ function pdu_decoder.parse(msg)
     end
     date.text = date.day .. '.' .. date.month .. '.' .. date.year .. ' ' .. date.hours .. ':' .. date.minutes .. ':' .. date.seconds .. ' ' .. 'GMT+' .. tostring(tonumber(date.time_zone, 10) * 15 / 60)
 
-    local user_date_length = msg:sub(p, p + 1)
+    local user_data_length = msg:sub(p, p + 1)
     p = p + 2
 
     local message_hex = msg:sub(p, #msg)
@@ -123,7 +127,7 @@ function pdu_decoder.parse(msg)
         protocol_identifier = protocol_identifier,
         data_coding_scheme = data_coding_scheme,
         date = date,
-        user_date_length = user_date_length,
+        user_data_length = user_data_length,
         message_hex = message_hex,
         message_text = message_text,
     }
