@@ -1,6 +1,7 @@
 local STATE = require "tsmsms.constants.state"
 local UBUS_RESPONSE_STATUS = require "tsmsms.constants.ubus_response_status"
 local pdu_decoder = require "tsmsms.pdu_decoder"
+local text_decoder = require "tsmsms.text_decoder"
 local util = require "luci.util"
 local uloop = require "uloop"
 
@@ -341,7 +342,7 @@ function state_machine.start_send_sms(req, sms_phone, sms_text)
         state_machine.state = STATE.SEND_SMS.WAITING_CMGF_OK
         state_machine.app.file:findNext()
         util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
-        state_machine.start_timeout_timer(10000)
+        state_machine.start_timeout_timer(30000)
         if_debug("[send_sms]", "started", "")
     else
         resp = {
@@ -374,7 +375,7 @@ end
 
 function state_machine.send_sms_handler(at_response)
     if state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then
-        if at_response:find("^AT%+CMGF") then
+        if at_response:find("AT%+CMGF") then
             if_debug("[send_sms]", "CMGF_OK", "")
             state_machine.send_sms_CMGF_OK_handler()
         end
@@ -390,7 +391,7 @@ function state_machine.send_sms_handler(at_response)
         end
     elseif at_response:find("%+CMS") and at_response:find("ERROR") then
         if_debug("[send_sms]", "ERROR", at_response)
-        file:moveToFailed()
+        state_machine.app.file:moveToFailed()
     end
 end
 
@@ -418,9 +419,25 @@ end
 function state_machine.sms_received_event_handler(at_response)
     if state_machine.state == STATE.WAIT then
         if_debug("[NEW-SMS-RECEIVED]", at_response, "")
-        state_machine.app.conn:notify(state_machine.app.ubus_methods["tsmodem.sms"].__ubusobj, 'new-sms-received', {
+
+        local pdu_data = ""
+        local shift = 2
+
+        if at_response:find("OK") then
+            shift = 8
+        end
+
+        for i = #at_response - shift, 1, -1 do
+            if at_response:sub(i, i) == '\n' then break end
+            pdu_data = at_response:sub(i, i) .. pdu_data
+        end
+
+        local message = text_decoder.utf16be_to_utf8(pdu_data)
+
+        state_machine.app.conn:notify(state_machine.app.ubus_methods["tsmodem.sms"].__ubusobj, 'NEW-SMS-RECEIVED', {
             status = UBUS_RESPONSE_STATUS.OK,
             result = at_response,
+            message = message,
         })
     else
         state_machine.event_handler(at_response)
