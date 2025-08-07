@@ -1,7 +1,6 @@
 local STATE = require "tsmsms.constants.state"
 local UBUS_RESPONSE_STATUS = require "tsmsms.constants.ubus_response_status"
 local pdu_decoder = require "tsmsms.pdu_decoder"
-local text_decoder = require "tsmsms.text_decoder"
 local util = require "luci.util"
 local uloop = require "uloop"
 
@@ -418,7 +417,7 @@ end
 
 function state_machine.sms_received_event_handler(at_response)
     if state_machine.state == STATE.WAIT then
-        if_debug("[NEW-SMS-RECEIVED]", at_response, "")
+        if_debug("[NEW-SMS-RECEIVED:AT-RESPONSE]", at_response, "")
 
         local pdu_data = ""
         local shift = 2
@@ -432,13 +431,16 @@ function state_machine.sms_received_event_handler(at_response)
             pdu_data = at_response:sub(i, i) .. pdu_data
         end
 
-        local message = text_decoder.utf16be_to_utf8(pdu_data)
+        local parsed_sms = pdu_decoder.parse(pdu_data)
 
         state_machine.app.conn:notify(state_machine.app.ubus_methods["tsmodem.sms"].__ubusobj, 'NEW-SMS-RECEIVED', {
             status = UBUS_RESPONSE_STATUS.OK,
-            result = at_response,
-            message = message,
+            sender = parsed_sms.sender_number,
+            date = parsed_sms.date.text,
+            message = parsed_sms.message_text,
         })
+
+        if_debug("[NEW-SMS-RECEIVED:SMS-DATA]", util.serialize_json(parsed_sms), "")
     else
         state_machine.event_handler(at_response)
     end
