@@ -373,7 +373,21 @@ function state_machine.send_sms_PDU_TEXT_OK_handler()
 end
 
 function state_machine.send_sms_handler(at_response)
-    if state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then
+    if at_response:find("%+CMS") and at_response:find("ERROR") then
+        if_debug("[send_sms]", "ERROR", at_response)
+
+        util.ubus("tsmodem.journal", "send", {
+            journal = {
+              datetime = os.date("%Y-%m-%d %H:%M:%S"),
+              name = "Ошибка при отправке SMS",
+              source = "Tsmsms",
+              command = "send_sms",
+              response = at_response:match("(%+CMS ERROR: %d+)"),
+            }
+        })
+
+        state_machine.app.file:moveToFailed()
+    elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then
         if at_response:find("AT%+CMGF") then
             if_debug("[send_sms]", "CMGF_OK", "")
             state_machine.send_sms_CMGF_OK_handler()
@@ -388,9 +402,6 @@ function state_machine.send_sms_handler(at_response)
             if_debug("[send_sms]", "CMGS_OK (PDU TEXT)", "")
             state_machine.send_sms_PDU_TEXT_OK_handler()
         end
-    elseif at_response:find("%+CMS") and at_response:find("ERROR") then
-        if_debug("[send_sms]", "ERROR", at_response)
-        state_machine.app.file:moveToFailed()
     end
 end
 
