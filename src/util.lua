@@ -18,19 +18,58 @@ function if_debug(title, value, comment)
 	end
 end
 
-function split_message(str, max_line_length)
+-- function split_message(str, max_line_length)
+--    local lines = {}
+--    local line
+--    str:gsub('(%s*)(%S+)', 
+--       function(spc, word) 
+--          if not line or #line + #spc + #word > max_line_length then
+--             table.insert(lines, line)
+--             line = word
+--          else
+--             line = line..spc..word
+--          end
+--       end
+--    )
+--    table.insert(lines, line)
+--    return lines
+-- end
+
+function split_message(str, max_chars_length)
    local lines = {}
-   local line
-   str:gsub('(%s*)(%S+)', 
-      function(spc, word) 
-         if not line or #line + #spc + #word > max_line_length then
-            table.insert(lines, line)
-            line = word
-         else
-            line = line..spc..word
-         end
+   local line = ""
+   local char_counter = 0
+   local i = 1
+
+   while i < #str do
+      local char_byte = str:byte(i)
+
+      if char_byte <= 127 then
+         line = line .. str:sub(i, i)
+         i = i + 1
+      elseif char_byte >= 192 and char_byte <= 223 then
+         line = line .. str:sub(i, i + 1)
+         i = i + 2
+      elseif char_byte >= 224 and char_byte <= 239 then
+         line = line .. str:sub(i, i + 2)
+         i = i + 3
+      elseif char_byte >= 240 and char_byte <= 247 then
+         line = line .. str:sub(i, i + 3)
+         i = i + 4
       end
-   )
-   table.insert(lines, line)
+
+      char_counter = char_counter + 1
+
+      if char_counter >= max_chars_length then
+         table.insert(lines, line)
+         char_counter = 0
+         line = ""
+      end
+   end
+
+   if #line > 0 then
+      table.insert(lines, line)
+   end
+
    return lines
 end
