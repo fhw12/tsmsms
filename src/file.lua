@@ -24,7 +24,7 @@ file.next = "" -- full path to next file
 file.name = "" -- file name of current
 file.pdu_text = ""
 file.pdu_len = ""
-file.ok_num, ok_sms, pdu_sms_text = true,true,""
+file.ok_num, file.ok_sms, file.pdu_sms_text = true,true,""
 
 
 function file:init(app)
@@ -38,31 +38,42 @@ end
 -- и каждый кусок складывает в отдельный файл;
 -- в имени файла указана длина, например:
 -- 23421341_sms_1-part_[208], где 208 длина фрагмента, содержащегося в файле
-function file:makePduChunks(phone, msg)
-	local pdu_len = ""
-	local pdu_text = ""
+function file:makePduChunks(phone_number, msg)
+    local msg_parts = split_message(msg, 67)
 	local total_chunks = 0
+	local sms_files = {}
 
-	local filename, fpath = "", ""
-    local parts = split_message(msg, 67)
+	for n, msg_part in ipairs(msg_parts) do
+		local pdu_len, pdu_text = pdu_encoder.encode(phone_number, msg_part)
 
-	for n, part in ipairs(parts) do
-	    -- pdu_len, pdu_text = EncoderPDU(phone, part)
-		pdu_len, pdu_text = pdu_encoder.encode(phone, part)
+		local file_name = string.format("%s_sms_%s-part_[%s]", tostring(os.time()), tostring(n), tostring(pdu_len))
+		local file_path = string.format("%s/%s", file.outgoing, file_name)
 
-		filename = string.format("%s_sms_%s-part_[%s]", tostring(os.time()), tostring(n), tostring(pdu_len))
+	    local f = io.open(file_path, "w")
 
-		fpath = string.format("%s/%s", file.outgoing, filename)
-
-		print("PATH: ", fpath)
-
-	    local f = io.open(fpath, "w")
 		f:write(pdu_text)
 		f:close()
+
+		sms_files[#sms_files+1] = { path = file_path }
+
 		total_chunks = total_chunks + 1
 	end
 
-	return total_chunks, file.outgoing
+	return total_chunks, file.outgoing, sms_files
+end
+
+function file:read_sms_file(sms_file_path)
+	local pdu_length = sms_file_path:match("%[(%d+)%]")
+
+	local f = io.open(sms_file_path, "rb")
+	if not f then return '', 0 end
+	local pdu_data = f:read("*a")
+	f:close()
+
+	file.pdu_text = pdu_data
+	file.pdu_len = pdu_length
+
+	return pdu_data, pdu_length
 end
 
 -- Проверяет папку. Если есть файлы, берёт первый из списка
@@ -103,14 +114,14 @@ function file:findNext()
 end
 
 
-function file:moveToSent()
-	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.sent .. "/" .. file.name)
-	if_debug("[sms.lua] moveToSent(): "..tostring(res):upper(), file.sent .. "/" .. file.name)
+function file:moveToSent(file_name)
+	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.sent .. "/" .. (file_name or file.name))
+	if_debug("[sms.lua] moveToSent(): "..tostring(res):upper(), file.sent .. "/" .. (file_name or file.name))
 end
 
-function file:moveToFailed()
-	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.failed .. "/" .. file.name)
-	if_debug("[sms.lua] moveToFailed(): "..tostring(res):upper(), file.failed .. "/" .. file.name)
+function file:moveToFailed(file_name)
+	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.failed .. "/" .. (file_name or file.name))
+	if_debug("[sms.lua] moveToFailed(): "..tostring(res):upper(), file.failed .. "/" .. (file_name or file.name))
 end
 
 function file:removeSent()
