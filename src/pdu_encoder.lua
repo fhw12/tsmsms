@@ -18,7 +18,7 @@ function pdu_encoder.phone_number_to_PDU(phone_number)
     return result
 end
 
-function pdu_encoder.utf8_hex_message_length(utf8_hex)
+function pdu_encoder.utf8_hex_length(utf8_hex)
     return string.format("%02X", #utf8_hex / 2) -- '0D' - 2 элемента в строке
 end
 
@@ -26,8 +26,18 @@ function pdu_encoder.pdu_length(pdu)
     return tostring(math.floor(#pdu / 2) - 1)
 end
 
-function pdu_encoder.encode(recipient_number, sms_text)
-    local pdu_head = "001100"
+function pdu_encoder.encode(recipient_number, sms_text, concatenated)
+    local is_sms_concatenated = (concatenated and concatenated.part and concatenated.total_parts)
+
+    local smsc_information_length = "00"
+    local pdu_type = ""
+    if is_sms_concatenated then
+        pdu_type = "51"
+    else
+        pdu_type = "11"
+    end
+    local tp_message_reference = "00"
+    local pdu_header = smsc_information_length .. pdu_type .. tp_message_reference
 
     local phone_number_type = ""
     if string.sub(recipient_number, 1, 1) == '+' then
@@ -42,10 +52,22 @@ function pdu_encoder.encode(recipient_number, sms_text)
 
     local pdu_middle = "00080B"
 
-    local message_hex = text_encoder.uft8_to_hex(sms_text)
-    local message_length = pdu_encoder.utf8_hex_message_length(message_hex)
+    local user_data_header = ""
+    if is_sms_concatenated then
+        local user_data_header_length = "05"
+        local information_element_identifier = "00"
+        local information_element_length = "03"
+        local reference_number = "FF"
+        local total_parts = string.format("%02X", concatenated.total_parts)
+        local sms_part = string.format("%02X", concatenated.part)
+        user_data_header = user_data_header_length .. information_element_identifier .. information_element_length .. reference_number .. total_parts .. sms_part
+    end
 
-    local pdu = pdu_head .. phone_number_length .. phone_number_type .. phone_number_PDU .. pdu_middle .. message_length .. message_hex
+    local message_hex = text_encoder.uft8_to_hex(sms_text)
+    local user_data_hex = user_data_header .. message_hex
+    local user_data_length = pdu_encoder.utf8_hex_length(user_data_hex)
+
+    local pdu = pdu_header .. phone_number_length .. phone_number_type .. phone_number_PDU .. pdu_middle .. user_data_length .. user_data_hex
 
     local cmgs_len = pdu_encoder.pdu_length(pdu)
     return cmgs_len, pdu
