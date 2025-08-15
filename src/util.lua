@@ -41,7 +41,7 @@ function split_message(str, max_chars_length)
    local char_counter = 0
    local i = 1
 
-   while i < #str do
+   while i <= #str do
       local char_byte = str:byte(i)
 
       if char_byte <= 127 then
