@@ -44,7 +44,7 @@ function file:makePduChunks(phone_number, msg)
 	local sms_files = {}
 
 	for n, msg_part in ipairs(msg_parts) do
-		local pdu_len, pdu_text = pdu_encoder.encode(phone_number, msg_part)
+		local pdu_len, pdu_text = pdu_encoder.encode(phone_number, msg_part, { part = n, total_parts = #msg_parts })
 
 		local file_name = string.format("%s_sms_%s-part_[%s]", tostring(os.time()), tostring(n), tostring(pdu_len))
 		local file_path = string.format("%s/%s", file.outgoing, file_name)
@@ -54,7 +54,7 @@ function file:makePduChunks(phone_number, msg)
 		f:write(pdu_text)
 		f:close()
 
-		sms_files[#sms_files+1] = { path = file_path }
+		sms_files[#sms_files+1] = { path = file_path, name = file_name }
 
 		total_chunks = total_chunks + 1
 	end
