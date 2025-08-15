@@ -9,6 +9,7 @@ local state_machine = {
     state = STATE.WAIT,
     timeout_timer = uloop.timer(function () end),
     tsmodem_driver_response_timeout = 60,
+    send_sms = { part = 0, files = {}, pdu_data = "", pdu_len = 0 },
     read_all_sms_buffer = {},
     sms_index = nil,
     def_req = nil,
@@ -44,6 +45,7 @@ function state_machine.start_timeout_timer(timeout)
 end
 
 function state_machine.reset_state()
+    state_machine.send_sms = { part = 0, files = {}, pdu_data = "", pdu_len = 0 }
     state_machine.read_all_sms_buffer = {}
     state_machine.sms_index = nil
     state_machine.def_req = nil
@@ -330,7 +332,7 @@ function state_machine.start_send_sms(req, sms_phone, sms_text)
     local resp = {}
 
     if sms_phone and sms_text then
-        local total_files, folder = state_machine.app.file:makePduChunks(sms_phone, sms_text)
+        local total_files, folder, sms_files = state_machine.app.file:makePduChunks(sms_phone, sms_text)
 
         resp = {
             status = UBUS_RESPONSE_STATUS.OK,
@@ -339,7 +341,11 @@ function state_machine.start_send_sms(req, sms_phone, sms_text)
         }
 
         state_machine.state = STATE.SEND_SMS.WAITING_CMGF_OK
-        state_machine.app.file:findNext()
+        state_machine.send_sms.files = sms_files
+        state_machine.send_sms.part = 1
+        local sms_file_path = state_machine.send_sms.files[state_machine.send_sms.part].path
+        state_machine.app.file:read_sms_file(sms_file_path)
+
         util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
         state_machine.start_timeout_timer(30000)
         if_debug("[send_sms]", "started", "")
@@ -367,9 +373,21 @@ end
 
 function state_machine.send_sms_PDU_TEXT_OK_handler()
     if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
-    state_machine.app.file:moveToSent()
-    state_machine.state = STATE.WAIT
+    local file_name = state_machine.send_sms.files[state_machine.send_sms.part].name
+    state_machine.app.file:moveToSent(file_name)
+
+    if state_machine.send_sms.part < #state_machine.send_sms.files then
+        state_machine.send_sms.part = state_machine.send_sms.part + 1
+        local sms_file_path = state_machine.send_sms.files[state_machine.send_sms.part].path
+        state_machine.app.file:read_sms_file(sms_file_path)
+        state_machine.state = STATE.SEND_SMS.WAITING_CMGF_OK
+        util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+        state_machine.start_timeout_timer(30000)
+        if_debug("[send_sms]", "new part started ["..tostring(state_machine.send_sms.part).."/"..tostring(#state_machine.send_sms.files).."]", "")
+    else
+        util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+        state_machine.state = STATE.WAIT
+    end
 end
 
 function state_machine.send_sms_handler(at_response)
@@ -386,7 +404,8 @@ function state_machine.send_sms_handler(at_response)
             }
         })
 
-        state_machine.app.file:moveToFailed()
+        local file_name = state_machine.send_sms.files[state_machine.send_sms.part].name
+        state_machine.app.file:moveToFailed(file_name)
     elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then
         if at_response:find("AT%+CMGF") then
             if_debug("[send_sms]", "CMGF_OK", "")
