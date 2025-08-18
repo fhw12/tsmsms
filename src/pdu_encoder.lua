@@ -27,7 +27,7 @@ function pdu_encoder.pdu_length(pdu)
 end
 
 function pdu_encoder.encode(recipient_number, sms_text, concatenated)
-    local is_sms_concatenated = (concatenated and concatenated.part and concatenated.total_parts)
+    local is_sms_concatenated = (concatenated and concatenated.part and concatenated.total_parts and concatenated.reference_number)
 
     local smsc_information_length = "00"
     local pdu_type = ""
@@ -57,7 +57,7 @@ function pdu_encoder.encode(recipient_number, sms_text, concatenated)
         local user_data_header_length = "05"
         local information_element_identifier = "00"
         local information_element_length = "03"
-        local reference_number = "FF"
+        local reference_number = string.format("%02X", concatenated.reference_number)
         local total_parts = string.format("%02X", concatenated.total_parts)
         local sms_part = string.format("%02X", concatenated.part)
         user_data_header = user_data_header_length .. information_element_identifier .. information_element_length .. reference_number .. total_parts .. sms_part
