@@ -43,8 +43,24 @@ function file:makePduChunks(phone_number, msg)
 	local total_chunks = 0
 	local sms_files = {}
 
+	local concatenated_reference_number = 0
+	if #msg_parts > 1 then
+		math.randomseed(os.time())
+		concatenated_reference_number = math.random(0, 255)
+	end
+
 	for n, msg_part in ipairs(msg_parts) do
-		local pdu_len, pdu_text = pdu_encoder.encode(phone_number, msg_part, { part = n, total_parts = #msg_parts })
+		local concatenated = nil
+
+		if #msg_parts > 1 then
+			concatenated = {
+				part = n,
+				total_parts = #msg_parts,
+				reference_number = concatenated_reference_number,
+			}
+		end
+
+		local pdu_len, pdu_text = pdu_encoder.encode(phone_number, msg_part, concatenated)
 
 		local file_name = string.format("%s_sms_%s-part_[%s]", tostring(os.time()), tostring(n), tostring(pdu_len))
 		local file_path = string.format("%s/%s", file.outgoing, file_name)
@@ -116,12 +132,12 @@ end
 
 function file:moveToSent(file_name)
 	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.sent .. "/" .. (file_name or file.name))
-	if_debug("[sms.lua] moveToSent(): "..tostring(res):upper(), file.sent .. "/" .. (file_name or file.name))
+	if_debug("[sms.lua] moveToSent(): "..tostring(res):upper(), file.sent .. "/" .. (file_name or file.name), "")
 end
 
 function file:moveToFailed(file_name)
 	local res = nixio.fs.move(file.outgoing .. "/" .. file.name, file.failed .. "/" .. (file_name or file.name))
-	if_debug("[sms.lua] moveToFailed(): "..tostring(res):upper(), file.failed .. "/" .. (file_name or file.name))
+	if_debug("[sms.lua] moveToFailed(): "..tostring(res):upper(), file.failed .. "/" .. (file_name or file.name), "")
 end
 
 function file:removeSent()
