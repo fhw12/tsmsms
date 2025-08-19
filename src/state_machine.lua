@@ -1,5 +1,6 @@
 local STATE = require "tsmsms.constants.state"
 local UBUS_RESPONSE_STATUS = require "tsmsms.constants.ubus_response_status"
+local CMS_ERROR = require "tsmsms.constants.cms_error"
 local pdu_decoder = require "tsmsms.pdu_decoder"
 local util = require "luci.util"
 local uloop = require "uloop"
@@ -33,6 +34,20 @@ function state_machine.on_timeout()
             status = UBUS_RESPONSE_STATUS.TIMEOUT
         })
         state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
+    end
+
+    if state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK or state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK or state_machine.state == STATE.SEND_SMS.WAITING_PDU_TEXT_OK then
+        util.ubus("tsmodem.journal", "send", {
+            journal = {
+              datetime = os.date("%Y-%m-%d %H:%M:%S"),
+              name = "Ошибка при отправке SMS",
+              source = "Tsmsms",
+              command = "send_sms",
+              response = "timeout",
+              error_title = CMS_ERROR.tsmodem_timeout.title_ru,
+              error_description = CMS_ERROR.tsmodem_timeout.description_ru,
+            }
+        })
     end
 
     state_machine.reset_state()
@@ -393,6 +408,17 @@ end
 function state_machine.send_sms_handler(at_response)
     if at_response:find("%+CMS") and at_response:find("ERROR") then
         if_debug("[send_sms]", "ERROR", at_response)
+        local error_msg = at_response:match("(%+CMS ERROR: %d+)")
+        local error_number = tonumber(error_msg:match("%d+"))
+
+        local error_table = CMS_ERROR[error_number]
+        local error_title = ""
+        local error_description = ""
+
+        if error_table then
+            error_title = error_table.title_ru
+            error_description = error_table.description_ru
+        end
 
         util.ubus("tsmodem.journal", "send", {
             journal = {
@@ -400,7 +426,9 @@ function state_machine.send_sms_handler(at_response)
               name = "Ошибка при отправке SMS",
               source = "Tsmsms",
               command = "send_sms",
-              response = at_response:match("(%+CMS ERROR: %d+)"),
+              response = error_number,
+              error_title = error_title,
+              error_description = error_description,
             }
         })
 
