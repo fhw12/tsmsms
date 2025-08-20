@@ -18,23 +18,6 @@ function if_debug(title, value, comment)
 	end
 end
 
--- function split_message(str, max_line_length)
---    local lines = {}
---    local line
---    str:gsub('(%s*)(%S+)', 
---       function(spc, word) 
---          if not line or #line + #spc + #word > max_line_length then
---             table.insert(lines, line)
---             line = word
---          else
---             line = line..spc..word
---          end
---       end
---    )
---    table.insert(lines, line)
---    return lines
--- end
-
 function split_message(str, max_chars_length)
    local lines = {}
    local line = ""
@@ -72,4 +55,20 @@ function split_message(str, max_chars_length)
    end
 
    return lines
+end
+
+function get_sms_pdu_data_from_at_response(at_response)
+   local pdu_data = ""
+   local shift = 2
+
+   if at_response:find("OK") then
+      shift = 8
+   end
+
+   for i = #at_response - shift, 1, -1 do
+      if at_response:sub(i, i) == '\n' then break end
+      pdu_data = at_response:sub(i, i) .. pdu_data
+   end
+
+   return pdu_data
 end
