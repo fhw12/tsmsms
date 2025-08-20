@@ -8,34 +8,9 @@ signal.signal(signal.SIGINT, function(signum)
   os.exit(128 + signum)
 end)
 
---[[ Характеристика модуля sms
-
-Один раз в 3 секунды модуль проверят содержимое каталога /var/sppon/tsmsms/outgoing
-Если есть файлы с текстом смс, то берётся первый файл (самый старый по дате)
-и запускается пошаговый процесс отправки.
-
-Шаг 1: Перевести модем в режим PDU
-Шаг 2: Указать модему длину смс-сообшения (согласно pdu)
-Шаг 3: Отправить смс
-Шаг 4: Перевести модем в режим TEXT
-
-Если на каком-то шаге модем вернул ошибку, 
-то прервать выполнение остльных шагов и венуть ошибку в Веб-UI (если смс отправлена из веб-консоли)
-либо вернуть ошибку по Email (если смс отправлена в ответ на sms-команду).
-Записать ошибку в Журнал событий.
-
-Весь процесс (шаги выше и вывод ошибок) продолжается 5 минут.
-Если через 5 минут не получилось отправть смс, то перемещаем данный файл
-в каталог /var/sppon/tsmsms/failed
-
-Повторяем всё с начала для следующего файла.
-
-]]
-
 local TSMODEM_DRIVER_EVENT = require "tsmsms.constants.tsmodem_driver_event"
 local state_machine = require "tsmsms.state_machine"
 local uci = require "luci.model.uci".cursor()
-local file = require "tsmsms.file"
 local ubus = require "ubus"
 local util = require "luci.util"
 local sys = require "luci.sys"
@@ -150,12 +125,11 @@ end
 
 -- [[ Initialize ]]
 local metatable = {
-  __call = function(app, file)
-    app.file = file
+  __call = function(app)
+    -- app.file = file
 
     uloop.init()
     app:init()
-    file:init(app)
 
     uloop.run()
     app.conn:close()
@@ -164,5 +138,4 @@ local metatable = {
   end
 }
 setmetatable(app, metatable)
-
-app(file)
+app()
