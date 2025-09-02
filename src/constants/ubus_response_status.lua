@@ -3,6 +3,7 @@ local ubus_response_status = {
     ERROR = "error",
     TIMEOUT = "timeout",
     BUSY = "busy",
+    TSMODEM_BUSY = "tsmodem_busy",
     STARTED = "started",
 }
 
