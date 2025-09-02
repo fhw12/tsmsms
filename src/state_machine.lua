@@ -9,6 +9,7 @@ local uloop = require "uloop"
 
 local state_machine = {
     state = STATE.WAIT,
+    module_name = "tsmsms",
     timeout_timer = uloop.timer(function () end),
     tsmodem_driver_response_timeout = 60,
     send_sms = { part = 0, chunks = {} },
@@ -78,13 +79,48 @@ function state_machine.busy_check(req)
     return false
 end
 
+function state_machine.tsmodem_busy_check(util_ubus_response)
+    if util_ubus_response then
+        if util_ubus_response["status"] and util_ubus_response["status"] == "busy" then
+            if state_machine.def_req then
+                state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.TSMODEM_BUSY })
+            end
+            state_machine.end_reply()
+            if_debug("[tsmodem_busy_check]", "tsmodem: ", "busy")
+            return true
+        else
+            if_debug("[tsmodem_busy_check]", "tsmodem: ", "not busy")
+            return false
+        end
+    else
+        if state_machine.def_req then
+            state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.ERROR })
+        end
+        state_machine.end_reply()
+        if_debug("[tsmodem_busy_check]", "response from tsmodem is 'nil'", "")
+        return true
+    end
+end
+
+function state_machine.tsmodem_send_at(command)
+    return util.ubus("tsmodem.driver", "send_at", { ["command"] = command, module_name = state_machine.module_name }, state_machine.tsmodem_driver_response_timeout)
+end
+
+function state_machine.tsmodem_unlock()
+    return util.ubus("tsmodem.driver", "unlock", { module_name = state_machine.module_name }, state_machine.tsmodem_driver_response_timeout)
+end
+
 function state_machine.start_reply(req)
     state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.STARTED })
     state_machine.def_req = state_machine.app.conn:defer_request(req)
 end
 
 function state_machine.end_reply()
-    state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
+    if state_machine.def_req then
+        state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
+    end
+
+    state_machine.tsmodem_unlock()
     state_machine.reset_state()
 end
 
@@ -103,14 +139,17 @@ function state_machine.start_get_count_of_received_sms(req)
     state_machine.start_reply(req)
 
     state_machine.state = STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+    -- local util_ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+    local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=1")
+    if state_machine.tsmodem_busy_check(util_ubus_response) then return end
     state_machine.start_timeout_timer()
     if_debug("[get_count_of_received_sms]", "started", "")
 end
 
 function state_machine.get_count_of_received_sms_CMGF_OK_handler()
     state_machine.state = STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CPMS?" }, state_machine.tsmodem_driver_response_timeout)
+    -- util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CPMS?" }, state_machine.tsmodem_driver_response_timeout)
+    state_machine.tsmodem_send_at("AT+CPMS?")
 end
 
 function state_machine.get_count_of_received_sms_CPMS_RESULT_handler(at_response)
@@ -151,14 +190,17 @@ function state_machine.start_read_sms_by_index(req, sms_index)
 
     state_machine.sms_index = sms_index
     state_machine.state = STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+    -- local util_ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+    local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=0")
+    if state_machine.tsmodem_busy_check(util_ubus_response) then return end
     state_machine.start_timeout_timer()
     if_debug("[start_read_sms_by_index]", "started", "")
 end
 
 function state_machine.read_sms_by_index_CMGF_OK_handler()
     state_machine.state = STATE.READ_SMS_BY_INDEX.WAITING_CMGR_RESULT
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGR="..tostring(state_machine.sms_index) }, state_machine.tsmodem_driver_response_timeout)
+    -- util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGR="..tostring(state_machine.sms_index) }, state_machine.tsmodem_driver_response_timeout)
+    state_machine.tsmodem_send_at("AT+CMGR="..tostring(state_machine.sms_index))
 end
 
 function state_machine.read_sms_by_index_CMGR_RESULT_handler(at_response)
@@ -205,14 +247,17 @@ function state_machine.start_delete_sms_by_index(req, sms_index)
 
     state_machine.sms_index = sms_index
     state_machine.state = STATE.DELETE_SMS_BY_INDEX.WAITING_CMGF_OK
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+    -- local util_ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+    local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=1")
+    if state_machine.tsmodem_busy_check(util_ubus_response) then return end
     state_machine.start_timeout_timer()
     if_debug("[start_delete_sms_by_index]", "started", "")
 end
 
 function state_machine.delete_sms_by_index_CMGF_OK_handler()
     state_machine.state = STATE.DELETE_SMS_BY_INDEX.WAITING_CMGD_OK
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGD="..tostring(state_machine.sms_index) }, state_machine.tsmodem_driver_response_timeout)
+    -- util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGD="..tostring(state_machine.sms_index) }, state_machine.tsmodem_driver_response_timeout)
+    state_machine.tsmodem_send_at("AT+CMGD="..tostring(state_machine.sms_index))
 end
 
 function state_machine.delete_sms_by_index_CMGD_OK_handler()
@@ -247,14 +292,17 @@ function state_machine.start_read_all_sms(req)
 
     state_machine.read_all_sms_buffer = {}
     state_machine.state = STATE.READ_ALL_SMS.WAITING_CMGF_OK
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+    -- local util_ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+    local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=0")
+    if state_machine.tsmodem_busy_check(util_ubus_response) then return end
     state_machine.start_timeout_timer()
     if_debug("[read_all_sms]", "started", "")
 end
 
 function state_machine.read_all_sms_CMGF_OK_handler()
     state_machine.state = STATE.READ_ALL_SMS.WAITING_CMGL_RESULT
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGL=4" }, state_machine.tsmodem_driver_response_timeout)
+    -- util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGL=4" }, state_machine.tsmodem_driver_response_timeout)
+    state_machine.tsmodem_send_at("AT+CMGL=4")
 end
 
 function state_machine.read_all_sms_CMGL_SMS_DATA_handler(at_response)
@@ -349,7 +397,10 @@ function state_machine.start_send_sms(req, sms_phone, sms_text)
         state_machine.send_sms.chunks = sms_chunks
         state_machine.send_sms.part = 1
 
-        util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+        -- local util_ubus_response = util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+        local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=0")
+        if state_machine.tsmodem_busy_check(util_ubus_response) then return end
+
         state_machine.start_timeout_timer(30000)
         if_debug("[send_sms]", "started", "")
     else
@@ -364,13 +415,15 @@ end
 
 function state_machine.send_sms_CMGF_OK_handler()
     local pdu_length = state_machine.send_sms.chunks[state_machine.send_sms.part].pdu_length
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = string.format("AT+CMGS=%s", pdu_length) }, state_machine.tsmodem_driver_response_timeout)
+    -- util.ubus("tsmodem.driver", "send_at", { ["command"] = string.format("AT+CMGS=%s", pdu_length) }, state_machine.tsmodem_driver_response_timeout)
+    state_machine.tsmodem_send_at(string.format("AT+CMGS=%s", pdu_length))
     state_machine.state = STATE.SEND_SMS.WAITING_CMGS_OK
 end
 
 function state_machine.send_sms_CMGS_OK_handler()
     local pdu_text = state_machine.send_sms.chunks[state_machine.send_sms.part].pdu_text
-    util.ubus("tsmodem.driver", "send_at", { ["command"] = string.format("%s\26", pdu_text) }, state_machine.tsmodem_driver_response_timeout)
+    -- util.ubus("tsmodem.driver", "send_at", { ["command"] = string.format("%s\26", pdu_text) }, state_machine.tsmodem_driver_response_timeout)
+    state_machine.tsmodem_send_at(string.format("%s\26", pdu_text))
     state_machine.state = STATE.SEND_SMS.WAITING_PDU_TEXT_OK
 end
 
@@ -380,11 +433,13 @@ function state_machine.send_sms_PDU_TEXT_OK_handler()
     if state_machine.send_sms.part < #state_machine.send_sms.chunks then
         state_machine.send_sms.part = state_machine.send_sms.part + 1
         state_machine.state = STATE.SEND_SMS.WAITING_CMGF_OK
-        util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+        -- util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=0" }, state_machine.tsmodem_driver_response_timeout)
+        state_machine.tsmodem_send_at("AT+CMGF=0")
         state_machine.start_timeout_timer(30000)
         if_debug("[send_sms]", "new part started ["..tostring(state_machine.send_sms.part).."/"..tostring(#state_machine.send_sms.chunks).."]", "")
     else
-        util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+        -- util.ubus("tsmodem.driver", "send_at", { ["command"] = "AT+CMGF=1" }, state_machine.tsmodem_driver_response_timeout)
+        state_machine.tsmodem_unlock()
         state_machine.state = STATE.WAIT
     end
 end
