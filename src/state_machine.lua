@@ -62,7 +62,7 @@ function state_machine.start_timeout_timer(timeout)
 end
 
 function state_machine.reset_state()
-    state_machine.send_sms = { part = 0, files = {} }
+    state_machine.send_sms = { part = 0, chunks = {} }
     state_machine.read_all_sms_buffer = {}
     state_machine.sms_index = nil
     state_machine.def_req = nil
@@ -164,7 +164,7 @@ end
 
 function state_machine.get_count_of_received_sms_event_handler(at_response)
     if state_machine.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK then
-        if at_response:find("^AT%+CMGF") and at_response:find("OK") then
+        if at_response:find("AT%+CMGF") and not at_response:find("ERROR") then --and at_response:find("OK") then
             if_debug("[get_count_of_received_sms]", "CMGF_OK", "")
             state_machine.get_count_of_received_sms_CMGF_OK_handler()
         else
@@ -172,7 +172,7 @@ function state_machine.get_count_of_received_sms_event_handler(at_response)
             state_machine.send_error()
         end
     elseif state_machine.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT then
-        if at_response:find("^AT%+CPMS") and at_response:find("OK") then
+        if at_response:find("AT%+CPMS") and not at_response:find("ERROR") then -- and at_response:find("OK") then
             if_debug("[get_count_of_received_sms]", "CPMS_OK", "")
             state_machine.get_count_of_received_sms_CPMS_RESULT_handler(at_response)
         else
@@ -224,7 +224,7 @@ end
 
 function state_machine.read_sms_by_index_event_handler(at_response)
     if state_machine.state == STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK then
-        if at_response:find("^AT%+CMGF") and at_response:find("OK") then
+        if at_response:find("AT%+CMGF") and not at_response:find("ERROR") then --and at_response:find("OK") then
             if_debug("[read_sms_by_index]", "CMGF_OK", "")
             state_machine.read_sms_by_index_CMGF_OK_handler()
         else
@@ -269,7 +269,7 @@ end
 
 function state_machine.delete_sms_by_index_event_handler(at_response)
     if state_machine.state == STATE.DELETE_SMS_BY_INDEX.WAITING_CMGF_OK then
-        if at_response:find("^AT%+CMGF") and at_response:find("OK") then
+        if at_response:find("AT%+CMGF") and not at_response:find("ERROR") then --and at_response:find("OK") then
             if_debug("[delete_sms_by_index]", "CMGF_OK", "")
             state_machine.delete_sms_by_index_CMGF_OK_handler()
         else
@@ -277,7 +277,7 @@ function state_machine.delete_sms_by_index_event_handler(at_response)
             state_machine.send_error()
         end
     elseif state_machine.state == STATE.DELETE_SMS_BY_INDEX.WAITING_CMGD_OK then
-        if at_response:find("^AT%+CMGD") then --and at_response:find("OK") then
+        if at_response:find("AT%+CMGD") and not at_response:find("ERROR") then --and at_response:find("OK") then
             if_debug("[delete_sms_by_index]", "CMGD_OK", "")
             state_machine.delete_sms_by_index_CMGD_OK_handler()
         end
@@ -354,7 +354,7 @@ end
 
 function state_machine.read_all_sms_handler(at_response)
     if state_machine.state == STATE.READ_ALL_SMS.WAITING_CMGF_OK then
-        if at_response:find("^AT%+CMGF") and at_response:find("OK") then
+        if at_response:find("AT%+CMGF") and not at_response:find("ERROR") then -- at_response:find("OK") then
             if_debug("[read_all_sms]", "CMGF_OK", "")
             state_machine.read_all_sms_CMGF_OK_handler()
         else
