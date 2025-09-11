@@ -124,9 +124,12 @@ function state_machine.end_reply()
     state_machine.reset_state()
 end
 
-function state_machine.send_error()
+function state_machine.send_error(message)
     if state_machine.def_req then
-        state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.ERROR })
+        state_machine.app.conn:reply(state_machine.def_req, {
+            status = UBUS_RESPONSE_STATUS.ERROR,
+            message = message,
+        })
         state_machine.end_reply()
     end
     state_machine.state = STATE.WAIT
@@ -172,12 +175,16 @@ function state_machine.get_count_of_received_sms_event_handler(at_response)
             state_machine.send_error()
         end
     elseif state_machine.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT then
-        if at_response:find("AT%+CPMS") and not at_response:find("ERROR") then -- and at_response:find("OK") then
+        if at_response:find("%+CPMS:") and not at_response:find("ERROR") then -- and at_response:find("OK") then
             if_debug("[get_count_of_received_sms]", "CPMS_OK", "")
             state_machine.get_count_of_received_sms_CPMS_RESULT_handler(at_response)
         else
-            if_debug("[get_count_of_received_sms]", "CPMS_ERROR", "")
-            state_machine.send_error()
+            if at_response:find("%sOK%s") then
+                if_debug("[get_count_of_received_sms]", "OK FROM CMGF", "")
+            else
+                if_debug("[get_count_of_received_sms]", "CPMS_ERROR", "")
+                state_machine.send_error()
+            end
         end
     end
 end
@@ -235,6 +242,9 @@ function state_machine.read_sms_by_index_event_handler(at_response)
         if at_response:find("\r\n+CMGR", 1, true) then
             if_debug("[read_sms_by_index]", "CMGR_OK", "")
             state_machine.read_sms_by_index_CMGR_RESULT_handler(at_response)
+        elseif at_response:find("%+CMS%sERROR:%s321") then
+            if_debug("[read_sms_by_index]", "CMGR_SMS_INDEX_ERROR", "no_such_sms")
+            state_machine.send_error("Wrong index, no such sms found")
         end
     end
 end
@@ -272,6 +282,8 @@ function state_machine.delete_sms_by_index_event_handler(at_response)
         if at_response:find("AT%+CMGF") and not at_response:find("ERROR") then --and at_response:find("OK") then
             if_debug("[delete_sms_by_index]", "CMGF_OK", "")
             state_machine.delete_sms_by_index_CMGF_OK_handler()
+        elseif at_response:find("%sOK%s") then
+            if_debug("[delete_sms_by_index]", "OK", "previous_ok")
         else
             if_debug("[delete_sms_by_index]", "CMGF_ERROR", "")
             state_machine.send_error()
