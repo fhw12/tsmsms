@@ -33,18 +33,21 @@ function app:init()
     local tsmodem_response_timeout = tonumber(uci:get("tsmsms", "general", "tsmodem_response_timeout"))
     local send_email_if_error = (uci:get("tsmsms", "general", "send_email_if_error") == '1')
     local email_address = uci:get("tsmsms", "general", "email_address")
+    local email_sender_address_tsmail = uci:get("tsmail", "general", "auth_user")
 
     app.uci_config = {
       send_sms_max_attempts = send_sms_max_attempts,
       tsmodem_response_timeout = tsmodem_response_timeout,
       send_email_if_error = send_email_if_error,
       email_address = email_address,
+      email_sender_address_tsmail = email_sender_address_tsmail,
     }
 
     if_debug('uci_config', 'send_sms_max_attempts: ', app.uci_config.send_sms_max_attempts)
     if_debug('uci_config', 'tsmodem_response_timeout: ', app.uci_config.tsmodem_response_timeout)
     if_debug('uci_config', 'send_email_if_error: ', app.uci_config.send_email_if_error)
     if_debug('uci_config', 'email_address: ', app.uci_config.email_address)
+    if_debug('uci_config', 'email_sender_address_tsmail: ', app.uci_config.email_sender_address_tsmail)
 
     state_machine.init(app)
     app:make_ubus()

@@ -13,6 +13,7 @@ local state_machine = {
     timeout_timer = uloop.timer(function () end),
     tsmodem_driver_response_timeout = 60,
     send_sms = { part = 0, chunks = {} },
+    send_sms_error_counter = 0,
     read_all_sms_buffer = {},
     sms_index = nil,
     def_req = nil,
@@ -39,6 +40,17 @@ function state_machine.on_timeout()
     end
 
     if state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK or state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK or state_machine.state == STATE.SEND_SMS.WAITING_PDU_TEXT_OK then
+        if state_machine.app.uci_config.send_email_if_error then
+            if_debug("[send_sms]", "send error via tsmail", "")
+            util.ubus("tsmail", "send", {
+                to = state_machine.app.uci_config.email_address,
+                from = state_machine.app.uci_config.email_sender_address_tsmail,
+                subj = string.format("Ошибка при отправке SMS: %s", CMS_ERROR.tsmodem_timeout.title_ru),
+                body = string.format("Название ошибки: %s, Описание ошибки: %s", CMS_ERROR.tsmodem_timeout.title_ru, CMS_ERROR.tsmodem_timeout.description_ru),
+            })
+        end
+
+        if_debug("[send_sms]", "send error to tsmodem.journal", "")
         util.ubus("tsmodem.journal", "send", {
             journal = {
                 datetime = os.date("%Y-%m-%d %H:%M:%S"),
@@ -63,6 +75,7 @@ end
 
 function state_machine.reset_state()
     state_machine.send_sms = { part = 0, chunks = {} }
+    state_machine.send_sms_error_counter = 0
     state_machine.read_all_sms_buffer = {}
     state_machine.sms_index = nil
     state_machine.def_req = nil
@@ -459,29 +472,55 @@ end
 function state_machine.send_sms_handler(at_response)
     if at_response:find("%+CMS") and at_response:find("ERROR") then
         if_debug("[send_sms]", "ERROR", at_response)
-        local error_msg = at_response:match("(%+CMS ERROR: %d+)")
-        local error_number = tonumber(error_msg:match("%d+"))
 
-        local error_table = CMS_ERROR[error_number]
-        local error_title = ""
-        local error_description = ""
+        state_machine.send_sms_error_counter = state_machine.send_sms_error_counter + 1
+        if_debug("[send_sms]", "ERROR", string.format("[%s/%s]", state_machine.send_sms_error_counter, state_machine.app.uci_config.send_sms_max_attempts))
 
-        if error_table then
-            error_title = error_table.title_ru
-            error_description = error_table.description_ru
+        if state_machine.send_sms_error_counter < state_machine.app.uci_config.send_sms_max_attempts then
+            if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
+            state_machine.state = STATE.SEND_SMS.WAITING_CMGF_OK
+            state_machine.tsmodem_send_at("AT+CMGF=0")
+            state_machine.start_timeout_timer(30000)
+
+            if_debug("[send_sms]", "new sms send attempt started", "")
+        else
+            if_debug("[send_sms]", "ERROR", "no attempts left")
+
+            local error_msg = at_response:match("(%+CMS ERROR: %d+)")
+            local error_number = tonumber(error_msg:match("%d+"))
+
+            local error_table = CMS_ERROR[error_number]
+            local error_title = ""
+            local error_description = ""
+
+            if error_table then
+                error_title = error_table.title_ru
+                error_description = error_table.description_ru
+            end
+
+            if state_machine.app.uci_config.send_email_if_error then
+                if_debug("[send_sms]", "send error via tsmail", "")
+                util.ubus("tsmail", "send", {
+                    to = state_machine.app.uci_config.email_address,
+                    from = state_machine.app.uci_config.email_sender_address_tsmail,
+                    subj = string.format("Ошибка при отправке SMS: %s", error_title),
+                    body = string.format("Код ошибки: %s, Название ошибки: %s, Описание ошибки: %s", error_number, error_title, error_description),
+                })
+            end
+
+            if_debug("[send_sms]", "send error to tsmodem.journal", "")
+            util.ubus("tsmodem.journal", "send", {
+                journal = {
+                    datetime = os.date("%Y-%m-%d %H:%M:%S"),
+                    name = "Ошибка при отправке SMS",
+                    source = "Tsmsms",
+                    command = "send_sms",
+                    response = error_number,
+                    error_title = error_title,
+                    error_description = error_description,
+                }
+            })
         end
-
-        util.ubus("tsmodem.journal", "send", {
-            journal = {
-                datetime = os.date("%Y-%m-%d %H:%M:%S"),
-                name = "Ошибка при отправке SMS",
-                source = "Tsmsms",
-                command = "send_sms",
-                response = error_number,
-                error_title = error_title,
-                error_description = error_description,
-            }
-        })
     elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then
         if at_response:find("AT%+CMGF") then
             if_debug("[send_sms]", "CMGF_OK", "")
