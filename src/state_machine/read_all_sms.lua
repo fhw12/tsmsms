@@ -1,0 +1,102 @@
+local STATE = require "tsmsms.constants.state"
+local UBUS_RESPONSE_STATUS = require "tsmsms.constants.ubus_response_status"
+local pdu_decoder = require "tsmsms.pdu_decoder"
+local util = require "luci.util"
+
+local read_all_sms = {}
+
+function read_all_sms.extend_state_machine(state_machine)
+    function state_machine.start_read_all_sms(req)
+        if_debug("[read_all_sms]", "ubus request received", "")
+        if state_machine.busy_check(req) then return end
+        state_machine.start_reply(req)
+
+        state_machine.read_all_sms_buffer = {}
+        state_machine.state = STATE.READ_ALL_SMS.WAITING_CMGF_OK
+        local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=0")
+        if state_machine.tsmodem_busy_check(util_ubus_response) then return end
+        state_machine.start_timeout_timer()
+        if_debug("[read_all_sms]", "started", "")
+    end
+
+    function state_machine.read_all_sms_CMGF_OK_handler()
+        state_machine.state = STATE.READ_ALL_SMS.WAITING_CMGL_RESULT
+        state_machine.tsmodem_send_at("AT+CMGL=4")
+    end
+
+    function state_machine.read_all_sms_CMGL_SMS_DATA_handler(at_response)
+        state_machine.read_all_sms_buffer[#state_machine.read_all_sms_buffer+1] = at_response
+    end
+
+    function state_machine.read_all_sms_CMGL_OK_handler()
+        if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
+
+        local response = {}
+
+        for i = 1, #state_machine.read_all_sms_buffer do
+            local at_response_sms_data = state_machine.read_all_sms_buffer[i]
+            local sms_index = at_response_sms_data:match('CMGL:%s*(%d+)')
+
+            local pdu_data = ""
+            local pdu_data_length_counter = 0
+            for j = #at_response_sms_data, 1, -1 do
+                local char = at_response_sms_data:sub(j, j)
+
+                if (string.byte(char) >= string.byte("0") and string.byte(char) <= string.byte("9")) or (string.byte(char) >= string.byte("A") and string.byte(char) <= string.byte("F")) then
+                    pdu_data = char .. pdu_data
+                    pdu_data_length_counter = pdu_data_length_counter + 1
+                else
+                    if pdu_data_length_counter > 10 then
+                        break
+                    else
+                        pdu_data = ""
+                        pdu_data_length_counter = 0
+                    end
+                end
+            end
+
+            local parsed_sms = pdu_decoder.parse(pdu_data)
+
+            response[i] = {
+                sms_index = sms_index,
+                sender = parsed_sms.sender_number,
+                date = parsed_sms.date.text,
+                message = parsed_sms.message_text,
+            }
+        end
+
+        state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.OK, result = response })
+        state_machine.end_reply()
+
+        if_debug("[read_sms_by_index]", util.serialize_json(response), "")
+    end
+
+    function state_machine.read_all_sms_handler(at_response)
+        if state_machine.state == STATE.READ_ALL_SMS.WAITING_CMGF_OK then
+            if at_response:find("AT%+CMGF") and not at_response:find("ERROR") then
+                if_debug("[read_all_sms]", "CMGF_OK", "")
+                state_machine.read_all_sms_CMGF_OK_handler()
+            else
+                if_debug("[read_all_sms]", "CMGF_ERROR", "")
+                state_machine.send_error()
+            end
+        elseif state_machine.state == STATE.READ_ALL_SMS.WAITING_CMGL_RESULT then
+            if at_response:find("%+CMGL:") then
+                if_debug("[read_all_sms]", "CMGL_SMS_DATA", "")
+                state_machine.read_all_sms_CMGL_SMS_DATA_handler(at_response)
+                if at_response:find("OK") then
+                if_debug("[read_all_sms]", "CMGL_OK", "")
+                    state_machine.read_all_sms_CMGL_OK_handler()
+                end
+            elseif at_response:find("^%s*OK%s*$") then
+                if_debug("[read_all_sms]", "CMGL_OK", "")
+                state_machine.read_all_sms_CMGL_OK_handler()
+            elseif not at_response:find("AT%+CMGL=4") then
+                if_debug("[read_all_sms]", "CMGL_ERROR", "")
+                state_machine.send_error()
+            end
+        end
+    end
+end
+
+return read_all_sms

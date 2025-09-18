@@ -9,7 +9,7 @@ signal.signal(signal.SIGINT, function(signum)
 end)
 
 local TSMODEM_DRIVER_EVENT = require "tsmsms.constants.tsmodem_driver_event"
-local state_machine = require "tsmsms.state_machine"
+local state_machine = require "tsmsms.state_machine.main"
 local uci = require "luci.model.uci".cursor()
 local ubus = require "ubus"
 local util = require "luci.util"
