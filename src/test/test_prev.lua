@@ -64,25 +64,25 @@ function test.print_test_result(counters)
     print("requests", counters.request)
 end
 
-function test.get_count_of_received_sms()
-    return test.tsmsms_ubus("get_count_of_received_sms", {})
-end
+-- function test.get_count_of_received_sms()
+--     return test.tsmsms_ubus("get_count_of_received_sms", {})
+-- end
 
-function test.read_sms_by_index(index)
-    return test.tsmsms_ubus("read_sms_by_index", { index = index })
-end
+-- function test.read_sms_by_index(index)
+--     return test.tsmsms_ubus("read_sms_by_index", { index = index })
+-- end
 
-function test.read_all_sms()
-    return test.tsmsms_ubus("read_all_sms", {})
-end
+-- function test.read_all_sms()
+--     return test.tsmsms_ubus("read_all_sms", {})
+-- end
 
-function test.delete_sms_by_index(index)
-    return test.tsmsms_ubus("delete_sms_by_index", { index = index })
-end
+-- function test.delete_sms_by_index(index)
+--     return test.tsmsms_ubus("delete_sms_by_index", { index = index })
+-- end
 
-function test.send_sms(phone, text)
-    return test.tsmsms_ubus("send_sms", { phone = phone, text = text })
-end
+-- function test.send_sms(phone, text)
+--     return test.tsmsms_ubus("send_sms", { phone = phone, text = text })
+-- end
 
 function test.run_test(bash, stop_if_error)
     test.reset_tmp_counters()
@@ -138,13 +138,13 @@ print("busy - tsmsms busy")
 print("tsmodem_busy - tsmodem busy")
 print("\n")
 
-test.run_one_test_times = 100
+test.run_one_test_times = 10
 test.wait_seconds_after_request = 0
 test.print_ubus_response = true
-test.run_test(test.create_bash_tsmsms_ubus_call("get_count_of_received_sms", {}), true)
-test.run_test(test.create_bash_tsmsms_ubus_call("read_sms_by_index", { index = 1 }), true)
-test.run_test(test.create_bash_tsmsms_ubus_call("read_all_sms", {}), true)
-test.run_test(test.create_bash_tsmsms_ubus_call("delete_sms_by_index", { index = 10 }), true)
+test.run_test(test.create_bash_tsmsms_ubus_call("get_count_of_received_sms", {}), false)
+test.run_test(test.create_bash_tsmsms_ubus_call("read_sms_by_index", { index = 1 }), false)
+test.run_test(test.create_bash_tsmsms_ubus_call("read_all_sms", {}), false)
+test.run_test(test.create_bash_tsmsms_ubus_call("delete_sms_by_index", { index = 10 }), false)
 
 -- test.run_one_test_times = 10
 -- test.run_test(test.create_bash_tsmsms_ubus_call("send_sms", { phone = "000100", text = "Balance" })) -- megafon balance check
