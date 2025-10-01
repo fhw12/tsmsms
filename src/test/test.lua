@@ -1,6 +1,9 @@
+local socket = require "socket"
+
 local test = {
     passed = 0,
     failed = 0,
+    start_time = 0,
 }
 
 local ESC = string.char(27)
@@ -10,69 +13,83 @@ local color = {
     reset = ESC .. "[0m",
 }
 
--- local OK = "[" .. ESC .. "[1;32mOK" .. ESC .. "[0m]"
--- local FAIL = "[" .. ESC .. "[1;31mFAIL" .. ESC .. "[0m]"
 local OK = "[" .. color.green .. "OK" .. color.reset .. "]"
 local FAIL = "[" .. color.red .. "FAIL" .. color.reset .. "]"
 
--- function test.print_ok(msg)
---     print(string.format("%s %s", OK, msg))
--- end
+local function get_test_time()
+    local end_time = socket.gettime()
+    local time_diff = (end_time - test.start_time) * 1000
+    test.start_time = 0
+    return string.format("%.2f", time_diff)
+end
 
--- function test.print_fail(msg)
---     print(string.format("%s %s", FAIL, msg))
--- end
+function test.run(func, times)
+    if not times then
+        times = 1
+    end
 
-function test.assert_true(result)
-    -- local info = debug.getinfo(2)
-    -- for key, value in pairs(info) do
-    --     print(key, value)
-    -- end
+    for i = 1, times do
+        test.start_time = socket.gettime()
+        local status, err = pcall(func)
+    end
+end
+
+function test.assert_true(msg, result)
+    local ms_time = get_test_time()
 
     if result == true then
-        print(string.format("%s", OK))
-    else
-        print(string.format("%s expected %s, got %s", FAIL, tostring(true), tostring(result)))
-    end
-end
-
-function test.assert_false(result)
-    if result == false then
-        print(string.format("%s", OK))
-    else
-        print(string.format("%s expected %s, got %s", FAIL, tostring(false), tostring(result)))
-    end
-end
-
-function test.assert_equal(expected, result)
-    if result == expected then
-        print(string.format("%s", OK))
-    else
-        print(string.format("%s expected %s, got %s", FAIL, tostring(expected), tostring(result)))
-    end
-end
-
--- function test.assert_match(msg, pattern, result)
---     if result:match(pattern) then
---         print(string.format("%s %s", OK, msg))
---     else
---         result = color_start .. result .. color_end
---         print(string.format("%s expected match pattern %s, got %s", FAIL, tostring(pattern), tostring(result)))
---     end
--- end
-
--- todo: rewrite assert_true, assert_false, assert_equal
-function test.assert_match(msg, pattern, result)
-    if result:match(pattern) then
-        print(string.format("%s %s", OK, msg))
+        print(string.format("%s %s (%s ms)", OK, msg, ms_time))
         test.passed = test.passed + 1
     else
-        -- result = color_start .. result .. color_end
-        -- print(string.format("%s expected match pattern %s, got %s", FAIL, tostring(pattern), tostring(result)))
-        print(string.format("%s %s", FAIL, msg))
+        print(string.format("%s %s (%s ms)", FAIL, msg, ms_time))
+        print("  Details:")
+        print(string.format("    Expected: %q (%s)", tostring(true), type(true)))
+        print(string.format("    Actual: %q (%s)", tostring(result), type(result)))
+        test.failed = test.failed + 1
+    end
+end
+
+function test.assert_false(msg, result)
+    local ms_time = get_test_time()
+
+    if result == false then
+        print(string.format("%s %s (%s ms)", OK, msg, ms_time))
+        test.passed = test.passed + 1
+    else
+        print(string.format("%s %s (%s ms)", FAIL, msg, ms_time))
+        print("  Details:")
+        print(string.format("    Expected: %q (%s)", tostring(false), type(false)))
+        print(string.format("    Actual: %q (%s)", tostring(result), type(result)))
+        test.failed = test.failed + 1
+    end
+end
+
+function test.assert_equal(msg, expected, result)
+    local ms_time = get_test_time()
+
+    if expected == result then
+        print(string.format("%s %s (%s ms)", OK, msg, ms_time))
+        test.passed = test.passed + 1
+    else
+        print(string.format("%s %s (%s ms)", FAIL, msg, ms_time))
+        print("  Details:")
+        print(string.format("    Expected: %q (%s)", tostring(expected), type(expected)))
+        print(string.format("    Actual: %q (%s)", tostring(result), type(result)))
+        test.failed = test.failed + 1
+    end
+end
+
+function test.assert_match(msg, pattern, result)
+    local ms_time = get_test_time()
+
+    if result:match(pattern) then
+        print(string.format("%s %s (%s ms)", OK, msg, ms_time))
+        test.passed = test.passed + 1
+    else
+        print(string.format("%s %s (%s ms)", FAIL, msg, ms_time))
         print("  Details:")
         print(string.format("    Match pattern: %q", pattern))
-        print(string.format("    Got text: %s", string.gsub(result, "\n", "\\n")))
+        print(string.format("    Got text: %q", string.gsub(result, "\n", "\\n")))
         test.failed = test.failed + 1
     end
 end
