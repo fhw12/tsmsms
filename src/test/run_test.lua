@@ -70,17 +70,35 @@ test.run(function ()
     for _, _ in pairs(sms_data_from_pdu) do
        i = i + 1
     end
-    test.assert_true("sms pdu data parsed", i > 0)
+    test.assert_true(
+        {
+            name = "sms pdu data parsed",
+            description = "Тест проверяет только наличие смс данных, для точной проверки необходимо распарсить данные через стороннюю утилиту и сравнить данные",
+        },
+        i > 0
+    )
 end, test.mode.info)
 
 test.run(function ()
     local pdu_length, pdu_data = pdu_encoder.encode("000100", "balance")
-    test.assert_true('pdu_encoder.encode(), pdu_length > 0 and #pdu_data > 0', tonumber(pdu_length) > 0 and #pdu_data > 0)
+    test.assert_true(
+        {
+            name = 'pdu_encoder.encode(), pdu_length > 0 and #pdu_data > 0',
+            description = "Нет возможности проверить правильность PDU данных для отправки смс, тест проверяет только наличие этих данных",
+        },
+        tonumber(pdu_length) > 0 and #pdu_data > 0
+    )
 end, test.mode.info)
 
 test.run(function ()
     local chunks = sms.makePduChunks("000100", "balance")
-    test.assert_true("sms.makePduChunks(), #chunks > 0", #chunks > 0)
+    test.assert_true(
+        {
+            name = "sms.makePduChunks(), #chunks > 0",
+            description = "Нет возможности проверить кусочки смс на их правильность, тест проверяет только их наличие",
+        },
+        #chunks > 0
+    )
 end, test.mode.info)
 
 test.run(function()
