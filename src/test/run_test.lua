@@ -8,11 +8,12 @@ local text_decoder = require "tsmsms.text_decoder"
 local text_encoder = require "tsmsms.text_encoder"
 require "tsmsms.util"
 
-
+-- Создает терминальную ubus команду для вызова метода с параметрами из tsmodem.sms (tsmsms)
 local function create_bash_tsmsms_ubus_call(method, params)
     return "ubus call tsmodem.sms " .. method .. " '" .. cjson.encode(params) .. "' 2>&1"
 end
 
+-- Выполняет команду в терминале, возвращает результат выполнения команды 
 local function run_bash(bash)
     local ubus_process = io.popen(bash)
     local result = ""
@@ -23,9 +24,17 @@ local function run_bash(bash)
     return result
 end
 
+
+
+---------------
+--   Тесты   --
+---------------
+
 test.run(function ()
-    local cmd = create_bash_tsmsms_ubus_call("get_count_of_received_sms", {})
-    local result = run_bash(cmd)
+    local cmd = create_bash_tsmsms_ubus_call("get_count_of_received_sms", {}) -- Создает терминальную команду
+    local result = run_bash(cmd) -- Запускает команду и записывает результат
+
+    -- Проверяет значение "ok" на присутствие в результате.
     test.assert_match("Get count of received sms is ok", "ok", result)
 end, test.mode.default, 1)
 
@@ -55,6 +64,8 @@ end, test.mode.default, 1)
 
 test.run(function ()
     local hex_text = "D4329E0E" -- "Text" string in gsm7bit
+
+    -- Проверяет правильность конвертации изначального текста (текст должен быть равен изначальному тексту)
     test.assert_equal("text_decoder.gsm7bit_to_text(hex_text) == original text", "Text", text_decoder.gsm7bit_to_text(hex_text))
 end)
 

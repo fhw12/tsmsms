@@ -1,15 +1,16 @@
 local pdu_encoder = require "tsmsms.pdu_encoder"
 require "tsmsms.util"
 
-
 local sms = {}
 
+-- Конвертирует данные смс для отправки в PDU данные
 function sms.makePduChunks(phone_number, msg_text)
     local msg_parts = split_message(msg_text, 67)
     local sms_chunks = {}
     local concatenated_reference_number = 0
 
-    if #msg_parts > 1 then
+    if #msg_parts > 1 then -- Если смс длинная
+        -- Создается один уникальный код смс для всех кусочков смс
         math.randomseed(os.time())
         concatenated_reference_number = math.random(0, 255)
     end
@@ -17,7 +18,8 @@ function sms.makePduChunks(phone_number, msg_text)
     for n, msg_part in ipairs(msg_parts) do
         local concatenated = nil
 
-        if #msg_parts > 1 then
+        if #msg_parts > 1 then -- Если смс длинная
+            -- Используется таблица для указания номера кусочка смс, количество частей смс и уникальный код смс
             concatenated = {
                 part = n,
                 total_parts = #msg_parts,
@@ -25,8 +27,8 @@ function sms.makePduChunks(phone_number, msg_text)
             }
         end
 
-        local pdu_length, pdu_text = pdu_encoder.encode(phone_number, msg_part, concatenated)
-        sms_chunks[#sms_chunks+1] = { pdu_length = pdu_length, pdu_text = pdu_text }
+        local pdu_length, pdu_text = pdu_encoder.encode(phone_number, msg_part, concatenated) -- Конвертирует данные кусочка смс в PDU данные
+        sms_chunks[#sms_chunks+1] = { pdu_length = pdu_length, pdu_text = pdu_text } -- PDU данные смс добавляются в таблицу
     end
 
     return sms_chunks

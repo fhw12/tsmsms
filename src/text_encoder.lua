@@ -1,5 +1,6 @@
 local text_encoder = {}
 
+-- Конвертирует utf8 формат в его hex представление
 function text_encoder.uft8_to_hex(str)
     local code_points = {}
     local i = 1

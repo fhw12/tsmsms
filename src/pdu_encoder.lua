@@ -2,6 +2,7 @@ local text_encoder = require "tsmsms.text_encoder"
 
 local pdu_encoder = {}
 
+-- Конвертирует номер получателя в PDU формат
 function pdu_encoder.phone_number_to_PDU(phone_number)
     local result = ''
 
@@ -18,14 +19,17 @@ function pdu_encoder.phone_number_to_PDU(phone_number)
     return result
 end
 
+-- Вычисляет размер utf8 hex данных
 function pdu_encoder.utf8_hex_length(utf8_hex)
     return string.format("%02X", #utf8_hex / 2) -- '0D' - 2 элемента в строке
 end
 
+-- Вычисляет размер PDU данных
 function pdu_encoder.pdu_length(pdu)
     return tostring(math.floor(#pdu / 2) - 1)
 end
 
+-- Создает PDU формат для отправки смс
 function pdu_encoder.encode(recipient_number, sms_text, concatenated)
     local is_sms_concatenated = (concatenated and concatenated.part and concatenated.total_parts and concatenated.reference_number)
 

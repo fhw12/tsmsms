@@ -1,3 +1,5 @@
+-- Предыдущий код теста
+
 local cjson = require "cjson"
 local socket = require "socket"
 

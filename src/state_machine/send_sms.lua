@@ -1,3 +1,5 @@
+-- Данный файл определяет методы необходимые для запроса "отправка смс"
+
 local STATE = require "tsmsms.constants.state"
 local UBUS_RESPONSE_STATUS = require "tsmsms.constants.ubus_response_status"
 local CMS_ERROR = require "tsmsms.constants.cms_error"
@@ -7,6 +9,7 @@ local util = require "luci.util"
 local send_sms = {}
 
 function send_sms.extend_state_machine(state_machine)
+    -- Вызывается при начале обработки запроса
     function state_machine.start_send_sms(req, sms_phone, sms_text)
         if_debug("[send_sms]", "ubus request received", "")
         if state_machine.busy_check(req) then return end
@@ -19,7 +22,7 @@ function send_sms.extend_state_machine(state_machine)
             state_machine.send_sms.part = 1
 
             state_machine.start_reply(req)
-            local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=0")
+            local util_ubus_response = state_machine.tsmodem_send_at("AT+CMGF=0") -- Включение PDU режима
             if state_machine.tsmodem_busy_check(util_ubus_response) then return end
 
             state_machine.start_timeout_timer(30000)
@@ -32,35 +35,39 @@ function send_sms.extend_state_machine(state_machine)
         end
     end
 
+    -- Отправляет размер PDU данных
     function state_machine.send_sms_CMGF_OK_handler()
         local pdu_length = state_machine.send_sms.chunks[state_machine.send_sms.part].pdu_length
         state_machine.tsmodem_send_at(string.format("AT+CMGS=%s", pdu_length))
         state_machine.state = STATE.SEND_SMS.WAITING_CMGS_OK
     end
 
+    -- Отправляет PDU данные
     function state_machine.send_sms_CMGS_OK_handler()
         local pdu_text = state_machine.send_sms.chunks[state_machine.send_sms.part].pdu_text
         state_machine.tsmodem_send_at(string.format("%s\26", pdu_text))
         state_machine.state = STATE.SEND_SMS.WAITING_PDU_TEXT_OK
     end
 
+    -- Завершает выполнение кусочка смс
     function state_machine.send_sms_PDU_TEXT_OK_handler()
         if state_machine.timeout_timer then state_machine.timeout_timer:cancel() end
 
-        if state_machine.send_sms.part < #state_machine.send_sms.chunks then
+        if state_machine.send_sms.part < #state_machine.send_sms.chunks then -- Если остались смс кусочки для отправки, то продолжает отправку
             state_machine.send_sms.part = state_machine.send_sms.part + 1
             state_machine.state = STATE.SEND_SMS.WAITING_CMGF_OK
             state_machine.tsmodem_send_at("AT+CMGF=0")
             state_machine.start_timeout_timer(30000)
             if_debug("[send_sms]", "new part started ["..tostring(state_machine.send_sms.part).."/"..tostring(#state_machine.send_sms.chunks).."]", "")
-        else
+        else -- Завершает выполнение запроса
             state_machine.app.conn:reply(state_machine.def_req, { status = UBUS_RESPONSE_STATUS.OK })
             state_machine.end_reply()
         end
     end
 
+    -- Обработчик состояний send_sms
     function state_machine.send_sms_handler(at_response)
-        if at_response:find("%+CMS") and at_response:find("ERROR") then
+        if at_response:find("%+CMS") and at_response:find("ERROR") then -- Если произошла ошибка, то уведомляет об этом
             if_debug("[send_sms]", "ERROR", at_response)
 
             state_machine.send_sms_error_counter = state_machine.send_sms_error_counter + 1
@@ -115,17 +122,17 @@ function send_sms.extend_state_machine(state_machine)
 
                 state_machine.send_error(message)
             end
-        elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then
+        elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK then -- PDU режим установлен
             if at_response:find("AT%+CMGF") then
                 if_debug("[send_sms]", "CMGF_OK", "")
                 state_machine.send_sms_CMGF_OK_handler()
             end
-        elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK then
+        elseif state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK then -- Размер PDU данных отправлен
             if at_response:find("AT%+CMGS") then
                 if_debug("[send_sms]", "CMGS_OK", "")
                 state_machine.send_sms_CMGS_OK_handler()
             end
-        elseif state_machine.state == STATE.SEND_SMS.WAITING_PDU_TEXT_OK then
+        elseif state_machine.state == STATE.SEND_SMS.WAITING_PDU_TEXT_OK then -- PDU данные отправлены
             if at_response:find("%+CMGS") then
                 if_debug("[send_sms]", "CMGS_OK (PDU TEXT)", "")
                 state_machine.send_sms_PDU_TEXT_OK_handler()

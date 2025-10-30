@@ -18,6 +18,7 @@ function if_debug(title, value, comment)
 	end
 end
 
+-- Разделяет str (текст смс сообщение) и max_chars_length (размер кусочка смс) на кусочки текста
 function split_message(str, max_chars_length)
    local lines = {}
    local line = ""
@@ -57,6 +58,7 @@ function split_message(str, max_chars_length)
    return lines
 end
 
+-- Читает PDU строку из AT ответа (вспомогательная функция для read sms by index)
 function get_sms_pdu_data_from_at_response(at_response)
    local pdu_data = ""
    local shift = 2

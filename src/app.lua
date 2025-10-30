@@ -55,6 +55,7 @@ function app:init()
   end
 end
 
+-- Создает ubus методы для tsmsms
 function app:make_ubus()
   local ubus_methods = {
     ["tsmodem.sms"] = {
@@ -97,6 +98,7 @@ function app:make_ubus()
   app.ubus_methods = ubus_methods
 end
 
+-- Подписывается на сообщения от tsmodem.driver
 function app:subscribe_ubus()
   local sub = {
     notify = function(msg, name)
@@ -113,12 +115,11 @@ function app:subscribe_ubus()
           SMS_send_result = msg["resp"]
         }), app.pipein_file)
         if_debug(TSMODEM_DRIVER_EVENT.SMS_SENT_ERROR, msg["answer"], "")
-        print("SMS SENT ERROR", msg["answer"])
         sys.process.exec({"/bin/sh", "-c", shell_command }, true, true, false)
       elseif name == TSMODEM_DRIVER_EVENT.AT_ANSWER then
-        state_machine.event_handler(msg["answer"])
+        state_machine.event_handler(msg["answer"]) -- При получении AT ответа вызывается обработчик AT событий
       elseif name == TSMODEM_DRIVER_EVENT.SMS_RECEIVED then
-        state_machine.sms_received_event_handler(msg["answer"])
+        state_machine.sms_received_event_handler(msg["answer"]) -- При получении смс вызывается обработчик смс
       end
     end
   }
@@ -129,8 +130,6 @@ end
 -- [[ Initialize ]]
 local metatable = {
   __call = function(app)
-    -- app.file = file
-
     uloop.init()
     app:init()
 

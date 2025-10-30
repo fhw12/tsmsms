@@ -28,6 +28,7 @@ function state_machine.init(app)
     state_machine.app = app
     state_machine.tsmodem_driver_response_timeout = app.uci_config.tsmodem_response_timeout
 
+    -- Добавление методов для state_machine
     delete_sms_by_index.extend_state_machine(state_machine)
     get_count_of_received_sms.extend_state_machine(state_machine)
     read_all_sms.extend_state_machine(state_machine)
@@ -35,6 +36,7 @@ function state_machine.init(app)
     send_sms.extend_state_machine(state_machine)
 end
 
+-- Вызывается при таймауте ожидания AT ответа от tsmodem.driver 
 function state_machine.on_timeout()
     if_debug("[timeout]", "timeout reached", "")
     if state_machine.timeout_timer then
@@ -49,6 +51,9 @@ function state_machine.on_timeout()
         state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
     end
 
+    -- Если таймаут возник при отправке смс,
+    -- то отправляется email уведомление об ошибке (если включена его отправка),
+    -- а также информация об ошибке отправляется в tsmodem.journal модуль
     if state_machine.state == STATE.SEND_SMS.WAITING_CMGF_OK or state_machine.state == STATE.SEND_SMS.WAITING_CMGS_OK or state_machine.state == STATE.SEND_SMS.WAITING_PDU_TEXT_OK then
         if state_machine.app.uci_config.send_email_if_error then
             if_debug("[send_sms]", "send error via tsmail", "")
@@ -92,6 +97,7 @@ function state_machine.reset_state()
     state_machine.state = STATE.WAIT
 end
 
+-- Используется для проверки занятости tsmsms модуля
 function state_machine.busy_check(req)
     if state_machine.state ~= STATE.WAIT then
         state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.BUSY })
@@ -102,6 +108,7 @@ function state_machine.busy_check(req)
     return false
 end
 
+-- Используется для проверки занятости tsmodem.driver модуля
 function state_machine.tsmodem_busy_check(util_ubus_response)
     if util_ubus_response then
         if util_ubus_response["status"] and util_ubus_response["status"] == "busy" then
@@ -125,19 +132,27 @@ function state_machine.tsmodem_busy_check(util_ubus_response)
     end
 end
 
+-- Отправляет AT команду tsmodem.driver модулю через ubus
 function state_machine.tsmodem_send_at(command)
     return util.ubus("tsmodem.driver", "send_at", { ["command"] = command, module_name = state_machine.module_name }, state_machine.tsmodem_driver_response_timeout)
 end
 
+-- Выполняет разблокировку tsmodem.driver
 function state_machine.tsmodem_unlock()
     return util.ubus("tsmodem.driver", "unlock", { module_name = state_machine.module_name }, state_machine.tsmodem_driver_response_timeout)
 end
 
+-- Вызывается при начале обработки запроса на отправку/чтение/удаление смс
 function state_machine.start_reply(req)
+    -- Отправляет ubus ответ о начале обработки запроса
     state_machine.app.conn:reply(req, { status = UBUS_RESPONSE_STATUS.STARTED })
+
+    -- Создает ссылку для отправки ubus ответа с задержкой
     state_machine.def_req = state_machine.app.conn:defer_request(req)
 end
 
+-- Вызывается при завершении запроса:
+-- завершает ответ с задержкой, выполняет разблокировку tsmodem.driver, сбрасывает state_machine состояние
 function state_machine.end_reply()
     if state_machine.def_req then
         state_machine.app.conn:complete_deferred_request(state_machine.def_req, 0)
@@ -147,6 +162,7 @@ function state_machine.end_reply()
     state_machine.reset_state()
 end
 
+-- Вызывается при возникновении ошибки при обработке запрос (например: AT ответ не соответствует ожидаемому результату)
 function state_machine.send_error(message)
     if state_machine.def_req then
         state_machine.app.conn:reply(state_machine.def_req, {
@@ -158,7 +174,7 @@ function state_machine.send_error(message)
     state_machine.state = STATE.WAIT
 end
 
--- general event handlers
+-- Главный обработчик, получает AT ответ и вызывает следующий обработчик связанный с запросом
 function state_machine.event_handler(at_response)
     if state_machine.state == STATE.WAIT then
         if_debug("AT-ANSWER", at_response, "")
@@ -166,6 +182,7 @@ function state_machine.event_handler(at_response)
         if_debug("[AT-RESPONSE]", at_response, "")
     end
 
+    -- Вызов одного из обработчиков связанных с запросом
     if state_machine.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CMGF_OK or state_machine.state == STATE.GET_COUNT_OF_RECEIVED_SMS.WAITING_CPMS_RESULT then
         state_machine.get_count_of_received_sms_event_handler(at_response)
     elseif state_machine.state == STATE.READ_SMS_BY_INDEX.WAITING_CMGF_OK or state_machine.state == STATE.READ_SMS_BY_INDEX.WAITING_CMGR_RESULT then
@@ -179,8 +196,9 @@ function state_machine.event_handler(at_response)
     end
 end
 
+-- Обработчик вызываемый при получении смс
 function state_machine.sms_received_event_handler(at_response)
-    if state_machine.state == STATE.WAIT then
+    if state_machine.state == STATE.WAIT then -- Если состояние WAIT, то смс считается новым
         if_debug("[NEW-SMS-RECEIVED:AT-RESPONSE]", at_response, "")
 
         local pdu_data = get_sms_pdu_data_from_at_response(at_response)
@@ -194,7 +212,7 @@ function state_machine.sms_received_event_handler(at_response)
         })
 
         if_debug("[NEW-SMS-RECEIVED:SMS-DATA]", util.serialize_json(parsed_sms), "")
-    else
+    else -- Если состояние не WAIT, то смс пришло от запроса на чтение смс по индексу или при чтении всех смс
         state_machine.event_handler(at_response)
     end
 end

@@ -1,3 +1,5 @@
+-- test.lua - shared code для реализации тестов
+
 local socket = require "socket"
 
 local test = {
@@ -60,6 +62,8 @@ local function print_description(description, include_details_label)
     end
 end
 
+
+-- Запускает экземпляр теста
 function test.run(func, mode, times)
     if not times then
         times = 1
@@ -77,6 +81,7 @@ function test.run(func, mode, times)
     end
 end
 
+-- Положительный результат выполнения теста, если результат равен true
 function test.assert_true(test_info, result)
     local name, description = get_name_and_description(test_info)
     local ms_time = get_test_time_str()
@@ -95,6 +100,7 @@ function test.assert_true(test_info, result)
     end
 end
 
+-- Положительный результат выполнения теста, если результат равен false
 function test.assert_false(test_info, result)
     local name, description = get_name_and_description(test_info)
     local ms_time = get_test_time_str()
@@ -113,6 +119,7 @@ function test.assert_false(test_info, result)
     end
 end
 
+-- Положительный результат выполнения текста, если результат равен ожидаемому значению
 function test.assert_equal(test_info, expected, result)
     local name, description = get_name_and_description(test_info)
     local ms_time = get_test_time_str()
@@ -131,6 +138,7 @@ function test.assert_equal(test_info, expected, result)
     end
 end
 
+-- Положительный результат выполнения текста, если результат соответствует паттерну
 function test.assert_match(test_info, pattern, result)
     local name, description = get_name_and_description(test_info)
     local ms_time = get_test_time_str()

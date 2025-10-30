@@ -2,6 +2,7 @@ local text_decoder = require "tsmsms.text_decoder"
 
 local pdu_decoder = {}
 
+-- Парсит PDU формат полученной смс и возвращает таблицу с данными об смс
 function pdu_decoder.parse(msg)
     local p = 1
 
