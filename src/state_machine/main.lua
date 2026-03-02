@@ -211,6 +211,11 @@ function state_machine.sms_received_event_handler(at_response)
             message = parsed_sms.message_text,
         })
 
+        util.ubus("tsmodem.driver", "update_balance", {
+            sender = parsed_sms.sender_number,
+            text = parsed_sms.message_text,
+        }, state_machine.tsmodem_driver_response_timeout)
+
         if_debug("[NEW-SMS-RECEIVED:SMS-DATA]", util.serialize_json(parsed_sms), "")
     else -- Если состояние не WAIT, то смс пришло от запроса на чтение смс по индексу или при чтении всех смс
         state_machine.event_handler(at_response)
